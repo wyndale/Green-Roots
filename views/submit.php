@@ -24,48 +24,7 @@ try {
         exit;
     }
 
-    // Debug: Log the user's barangay_id
-    error_log("User Barangay ID: " . $user['barangay_id']);
-
-    // Fetch the user's rank within their barangay
-    $stmt = $pdo->prepare("
-        SELECT user_rank
-        FROM (
-            SELECT user_id, 
-                   RANK() OVER (ORDER BY trees_planted DESC) as user_rank
-            FROM users
-            WHERE barangay_id = :barangay_id
-        ) ranked_users
-        WHERE user_id = :user_id
-    ");
-    $stmt->execute([
-        'barangay_id' => $user['barangay_id'],
-        'user_id' => $user_id
-    ]);
-    $user_rank = $stmt->fetchColumn();
-    $user_rank_display = $user_rank !== false ? "#$user_rank" : "Not Ranked";
-
-    // Fetch upcoming events
-    $stmt = $pdo->prepare("
-        SELECT title, event_date, location 
-        FROM events 
-        WHERE event_date >= CURDATE() 
-        ORDER BY event_date ASC 
-        LIMIT 3
-    ");
-    $stmt->execute();
-    $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // Fetch recent activities
-    $stmt = $pdo->prepare("
-        SELECT description, activity_type, created_at 
-        FROM activities 
-        WHERE user_id = :user_id 
-        ORDER BY created_at DESC 
-        LIMIT 3
-    ");
-    $stmt->execute(['user_id' => $user_id]);
-    $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $barangay_id = $user['barangay_id'];
 
     // Define the uploads directory path
     $upload_dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR;
@@ -74,11 +33,112 @@ try {
     // Create the uploads directory if it doesn't exist
     if (!is_dir($upload_dir)) {
         if (!mkdir($upload_dir, 0755, true)) {
-            $profile_error = 'Failed to create uploads directory. Please contact the administrator.';
+            $submission_error = 'Failed to create uploads directory. Please contact the administrator.';
         }
     }
 
-    // Handle profile update
+    // Handle tree planting submission
+    $submission_error = '';
+    $submission_success = '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_planting'])) {
+        $trees_planted = filter_input(INPUT_POST, 'trees_planted', FILTER_VALIDATE_INT);
+        $latitude = filter_input(INPUT_POST, 'latitude', FILTER_VALIDATE_FLOAT);
+        $longitude = filter_input(INPUT_POST, 'longitude', FILTER_VALIDATE_FLOAT);
+        $location_accuracy = filter_input(INPUT_POST, 'location_accuracy', FILTER_VALIDATE_FLOAT);
+
+        // Validate inputs
+        if ($trees_planted === false || $trees_planted <= 0) {
+            $submission_error = 'Please enter a valid number of trees planted (must be a positive integer).';
+        } elseif (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
+            $submission_error = 'Please upload a photo of the tree planting.';
+        } elseif ($latitude === false || $longitude === false || $latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+            $submission_error = 'Unable to capture valid GPS coordinates. Please enable location services and try again.';
+        } else {
+            // Validate photo
+            $file_tmp = $_FILES['photo']['tmp_name'];
+            $file_name = $_FILES['photo']['name'];
+            $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+            $allowed_exts = ['jpg', 'jpeg', 'png', 'gif'];
+
+            if (!in_array($file_ext, $allowed_exts)) {
+                $submission_error = 'Only JPG, JPEG, PNG, and GIF files are allowed for tree planting photos.';
+            } elseif ($_FILES['photo']['size'] > 15 * 1024 * 1024) { // 15MB limit
+                $submission_error = 'Photo size must be less than 15MB.';
+            } else {
+                // Generate a unique file name
+                $new_file_name = 'submission_' . $user_id . '_' . time() . '.' . $file_ext;
+                $upload_path = $upload_dir . $new_file_name;
+                $upload_path_relative = $upload_dir_relative . $new_file_name;
+
+                // Check if the directory is writable
+                if (!is_writable($upload_dir)) {
+                    $submission_error = 'Uploads directory is not writable. Please contact the administrator.';
+                } elseif (move_uploaded_file($file_tmp, $upload_path)) {
+                    // Generate photo hash
+                    $photo_hash = hash_file('sha256', $upload_path);
+
+                    // Get IP address
+                    $ip_address = $_SERVER['REMOTE_ADDR'];
+
+                    // Insert submission into database
+                    $stmt = $pdo->prepare("
+                        INSERT INTO submissions (
+                            user_id, barangay_id, trees_planted, photo_path, photo_timestamp,
+                            photo_hash, latitude, longitude, location_accuracy,
+                            device_location_timestamp, ip_address, status
+                        ) VALUES (
+                            :user_id, :barangay_id, :trees_planted, :photo_path, NOW(),
+                            :photo_hash, :latitude, :longitude, :location_accuracy,
+                            NOW(), :ip_address, 'pending'
+                        )
+                    ");
+                    $stmt->execute([
+                        'user_id' => $user_id,
+                        'barangay_id' => $barangay_id,
+                        'trees_planted' => $trees_planted,
+                        'photo_path' => $upload_path_relative,
+                        'photo_hash' => $photo_hash,
+                        'latitude' => $latitude,
+                        'longitude' => $longitude,
+                        'location_accuracy' => $location_accuracy,
+                        'ip_address' => $ip_address
+                    ]);
+
+                    // Update user's trees_planted and co2_offset
+                    $new_trees_planted = $user['trees_planted'] + $trees_planted;
+                    $co2_per_tree = 22; // Approx. 22 kg CO2 offset per tree per year
+                    $new_co2_offset = $user['co2_offset'] + ($trees_planted * $co2_per_tree);
+
+                    $stmt = $pdo->prepare("
+                        UPDATE users 
+                        SET trees_planted = :trees_planted, co2_offset = :co2_offset
+                        WHERE user_id = :user_id
+                    ");
+                    $stmt->execute([
+                        'trees_planted' => $new_trees_planted,
+                        'co2_offset' => $new_co2_offset,
+                        'user_id' => $user_id
+                    ]);
+
+                    // Log the activity
+                    $stmt = $pdo->prepare("
+                        INSERT INTO activities (user_id, description, activity_type)
+                        VALUES (:user_id, :description, 'submission')
+                    ");
+                    $stmt->execute([
+                        'user_id' => $user_id,
+                        'description' => "Submitted a tree planting of $trees_planted trees."
+                    ]);
+
+                    $submission_success = 'Tree planting submitted successfully! It is now pending validation.';
+                } else {
+                    $submission_error = 'Failed to upload photo. Please try again.';
+                }
+            }
+        }
+    }
+
+    // Handle profile update (same as dashboard.php)
     $profile_error = '';
     $profile_success = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
@@ -206,7 +266,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Tree Planting Initiative</title>
+    <title>Submit Tree Planting - Tree Planting Initiative</title>
     <style>
         * {
             margin: 0;
@@ -256,6 +316,9 @@ try {
         .main-content {
             flex: 1;
             padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .header {
@@ -263,6 +326,7 @@ try {
             justify-content: space-between;
             align-items: center;
             margin-bottom: 30px;
+            width: 100%;
             position: relative;
         }
 
@@ -339,6 +403,98 @@ try {
 
         .header .profile span {
             font-size: 18px;
+        }
+
+        .submission-form {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .submission-form h2 {
+            font-size: 28px;
+            color: #1e3a8a;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .submission-form .error {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+            font-size: 16px;
+        }
+
+        .submission-form .success {
+            background: #d1fae5;
+            color: #10b981;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+            font-size: 16px;
+        }
+
+        .submission-form .error.show,
+        .submission-form .success.show {
+            display: block;
+        }
+
+        .submission-form .form-group {
+            margin-bottom: 25px;
+        }
+
+        .submission-form label {
+            display: block;
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .submission-form input[type="number"],
+        .submission-form input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e0e7ff;
+            border-radius: 5px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .submission-form input:focus {
+            border-color: #4f46e5;
+        }
+
+        .submission-form #photo-preview {
+            margin-top: 10px;
+            max-width: 100%;
+            max-height: 200px;
+            display: none;
+            border-radius: 5px;
+        }
+
+        .submission-form input[type="submit"] {
+            background: #4f46e5;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+            padding: 12px;
+            font-size: 16px;
+            width: 100%;
+            border-radius: 5px;
+        }
+
+        .submission-form input[type="submit"]:hover {
+            background: #7c3aed;
         }
 
         .modal {
@@ -463,126 +619,6 @@ try {
             background: #7c3aed;
         }
 
-        .card {
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
-            color: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-            margin-bottom: 30px;
-        }
-
-        .card .details {
-            display: flex;
-            justify-content: space-between;
-            font-size: 18px;
-        }
-
-        .card .details h2 {
-            font-size: 28px;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-        }
-
-        .stat-box {
-            background: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .stat-box h3 {
-            font-size: 20px;
-            margin-bottom: 15px;
-            color: #1e3a8a;
-        }
-
-        .stat-box .chart {
-            height: 120px;
-            background: #e0e7ff;
-            border-radius: 10px;
-        }
-
-        .stat-box .podium {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto;
-            position: relative;
-        }
-
-        .stat-box .podium .steps {
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            height: 80px;
-        }
-
-        .stat-box .podium .step {
-            background: #e0e7ff;
-            border-radius: 5px;
-        }
-
-        .stat-box .podium .step.left {
-            width: 35px;
-            height: 50px;
-        }
-
-        .stat-box .podium .step.center {
-            width: 50px;
-            height: 80px;
-            background: #d1d5db;
-        }
-
-        .stat-box .podium .step.right {
-            width: 35px;
-            height: 60px;
-        }
-
-        .stat-box .podium .rank {
-            position: absolute;
-            top: 35px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 20px;
-            color: #1e3a8a;
-            font-weight: bold;
-        }
-
-        .stat-box ul {
-            list-style: none;
-        }
-
-        .stat-box ul li {
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e7ff;
-            font-size: 16px;
-        }
-
-        .recent-activities ul li {
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .download-btn {
-            display: block;
-            background: #4f46e5;
-            color: #fff;
-            text-align: center;
-            padding: 15px;
-            border-radius: 10px;
-            text-decoration: none;
-            margin-top: 30px;
-            font-size: 16px;
-        }
-
-        .download-btn:hover {
-            background: #7c3aed;
-        }
-
         .error-message {
             background: #fee2e2;
             color: #dc2626;
@@ -591,6 +627,8 @@ try {
             margin-bottom: 20px;
             text-align: center;
             font-size: 16px;
+            width: 100%;
+            max-width: 600px;
         }
 
         /* Mobile Responsive Design */
@@ -650,61 +688,26 @@ try {
                 font-size: 16px;
             }
 
-            .card {
+            .submission-form {
                 padding: 20px;
             }
 
-            .card .details {
-                font-size: 16px;
-            }
-
-            .card .details h2 {
+            .submission-form h2 {
                 font-size: 24px;
             }
 
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 20px;
+            .submission-form label {
+                font-size: 14px;
             }
 
-            .stat-box {
-                padding: 20px;
+            .submission-form input[type="number"],
+            .submission-form input[type="file"] {
+                padding: 10px;
+                font-size: 14px;
             }
 
-            .stat-box h3 {
-                font-size: 18px;
-            }
-
-            .stat-box .podium {
-                width: 100px;
-                height: 100px;
-            }
-
-            .stat-box .podium .steps {
-                height: 70px;
-            }
-
-            .stat-box .podium .step.left {
-                width: 30px;
-                height: 40px;
-            }
-
-            .stat-box .podium .step.center {
-                width: 40px;
-                height: 70px;
-            }
-
-            .stat-box .podium .step.right {
-                width: 30px;
-                height: 50px;
-            }
-
-            .stat-box .podium .rank {
-                top: 30px;
-                font-size: 18px;
-            }
-
-            .stat-box ul li {
+            .submission-form input[type="submit"] {
+                padding: 10px;
                 font-size: 14px;
             }
 
@@ -751,7 +754,7 @@ try {
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
             <?php endif; ?>
             <div class="header">
-                <h1>Tree Planting Dashboard</h1>
+                <h1>Submit Tree Planting</h1>
                 <div class="search-bar">
                     <input type="text" placeholder="Search functionalities..." id="searchInput">
                     <div class="search-results" id="searchResults"></div>
@@ -761,60 +764,31 @@ try {
                     <img src="<?php echo $user['profile_picture'] ? htmlspecialchars($user['profile_picture']) : 'profile.jpg'; ?>" alt="Profile">
                 </div>
             </div>
-            <div class="card">
-                <div class="details">
-                    <div>
-                        <p>Trees Planted</p>
-                        <h2><?php echo $user['trees_planted']; ?></h2>
+            <div class="submission-form">
+                <h2>Submit Your Tree Planting</h2>
+                <?php if ($submission_error): ?>
+                    <div class="error show"><?php echo htmlspecialchars($submission_error); ?></div>
+                <?php endif; ?>
+                <?php if ($submission_success): ?>
+                    <div class="success show"><?php echo htmlspecialchars($submission_success); ?></div>
+                <?php endif; ?>
+                <form method="POST" action="" enctype="multipart/form-data">
+                    <input type="hidden" name="submit_planting" value="1">
+                    <input type="hidden" name="latitude" id="latitude">
+                    <input type="hidden" name="longitude" id="longitude">
+                    <input type="hidden" name="location_accuracy" id="location_accuracy">
+                    <div class="form-group">
+                        <label for="trees_planted">Number of Trees Planted</label>
+                        <input type="number" id="trees_planted" name="trees_planted" min="1" required>
                     </div>
-                    <div>
-                        <p>Eco Points</p>
-                        <h2><?php echo $user['eco_points']; ?></h2>
+                    <div class="form-group">
+                        <label for="photo">Upload Photo (JPG, PNG, GIF)</label>
+                        <input type="file" id="photo" name="photo" accept="image/jpeg,image/png,image/gif" required>
+                        <img id="photo-preview" src="#" alt="Photo Preview">
                     </div>
-                </div>
+                    <input type="submit" value="Submit Planting">
+                </form>
             </div>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <h3>CO₂ Offset</h3>
-                    <p><?php echo $user['co2_offset']; ?> kg</p>
-                    <div class="chart"></div>
-                </div>
-                <div class="stat-box">
-                    <h3>Your Rank in Barangay</h3>
-                    <div class="podium">
-                        <div class="steps">
-                            <div class="step left"></div>
-                            <div class="step center"></div>
-                            <div class="step right"></div>
-                        </div>
-                        <div class="rank"><?php echo $user_rank_display; ?></div>
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <h3>Upcoming Events</h3>
-                    <ul>
-                        <?php foreach ($events as $event): ?>
-                            <li>
-                                <?php echo htmlspecialchars($event['title']); ?> - 
-                                <?php echo date('M d', strtotime($event['event_date'])); ?> at 
-                                <?php echo htmlspecialchars($event['location']); ?>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-                <div class="stat-box recent-activities">
-                    <h3>Recent Activities</h3>
-                    <ul>
-                        <?php foreach ($activities as $activity): ?>
-                            <li>
-                                <span><?php echo htmlspecialchars($activity['description']); ?></span>
-                                <span><?php echo date('M d', strtotime($activity['created_at'])); ?></span>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-            </div>
-            <a href="history.php" class="download-btn">View Submission History</a>
         </div>
     </div>
 
@@ -962,6 +936,48 @@ try {
         passwordModal.addEventListener('click', function(e) {
             if (e.target === passwordModal) {
                 passwordModal.classList.remove('active');
+            }
+        });
+
+        // Photo preview functionality
+        const photoInput = document.querySelector('#photo');
+        const photoPreview = document.querySelector('#photo-preview');
+
+        photoInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    photoPreview.src = e.target.result;
+                    photoPreview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                photoPreview.style.display = 'none';
+            }
+        });
+
+        // Capture GPS coordinates
+        window.addEventListener('load', function() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        document.querySelector('#latitude').value = position.coords.latitude;
+                        document.querySelector('#longitude').value = position.coords.longitude;
+                        document.querySelector('#location_accuracy').value = position.coords.accuracy || '';
+                    },
+                    function(error) {
+                        console.error('Geolocation error:', error);
+                        alert('Unable to capture GPS coordinates. Please enable location services and try again.');
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                alert('Geolocation is not supported by your browser. Please use a modern browser to submit tree plantings.');
             }
         });
     </script>

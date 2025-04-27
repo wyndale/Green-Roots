@@ -12,7 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
-// Fetch user data
+// Fetch user data and rankings
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
     $stmt->execute(['user_id' => $user_id]);
@@ -24,8 +24,7 @@ try {
         exit;
     }
 
-    // Debug: Log the user's barangay_id
-    error_log("User Barangay ID: " . $user['barangay_id']);
+    $barangay_id = $user['barangay_id'];
 
     // Fetch the user's rank within their barangay
     $stmt = $pdo->prepare("
@@ -39,33 +38,119 @@ try {
         WHERE user_id = :user_id
     ");
     $stmt->execute([
-        'barangay_id' => $user['barangay_id'],
+        'barangay_id' => $barangay_id,
         'user_id' => $user_id
     ]);
     $user_rank = $stmt->fetchColumn();
     $user_rank_display = $user_rank !== false ? "#$user_rank" : "Not Ranked";
 
-    // Fetch upcoming events
+    // Fetch top users in the barangay (including rank)
     $stmt = $pdo->prepare("
-        SELECT title, event_date, location 
-        FROM events 
-        WHERE event_date >= CURDATE() 
-        ORDER BY event_date ASC 
-        LIMIT 3
+        SELECT 
+            user_id,
+            username,
+            trees_planted,
+            RANK() OVER (ORDER BY trees_planted DESC) as user_rank
+        FROM users
+        WHERE barangay_id = :barangay_id
+        ORDER BY user_rank ASC
+        LIMIT 10
+    ");
+    $stmt->execute(['barangay_id' => $barangay_id]);
+    $top_users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch barangay details
+    $stmt = $pdo->prepare("SELECT name, city, province FROM barangays WHERE barangay_id = :barangay_id");
+    $stmt->execute(['barangay_id' => $barangay_id]);
+    $barangay = $stmt->fetch(PDO::FETCH_ASSOC);
+    $barangay_name = $barangay['name'];
+
+    // Fetch barangay rankings (top 10)
+    $stmt = $pdo->prepare("
+        SELECT r.ranking_id, r.barangay_id, r.total_trees_planted, r.rank_position, b.name, b.city, b.province
+        FROM rankings r
+        JOIN barangays b ON r.barangay_id = b.barangay_id
+        ORDER BY r.rank_position ASC
+        LIMIT 10
     ");
     $stmt->execute();
-    $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $barangay_rankings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch recent activities
+    // Fetch the top 1 barangay (for minimal display)
     $stmt = $pdo->prepare("
-        SELECT description, activity_type, created_at 
-        FROM activities 
-        WHERE user_id = :user_id 
-        ORDER BY created_at DESC 
-        LIMIT 3
+        SELECT r.ranking_id, r.barangay_id, r.total_trees_planted, r.rank_position, b.name, b.city, b.province
+        FROM rankings r
+        JOIN barangays b ON r.barangay_id = b.barangay_id
+        WHERE r.rank_position = 1
+        LIMIT 1
     ");
-    $stmt->execute(['user_id' => $user_id]);
-    $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmt->execute();
+    $top_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Fetch the user's barangay rank
+    $stmt = $pdo->prepare("
+        SELECT rank_position, total_trees_planted
+        FROM rankings
+        WHERE barangay_id = :barangay_id
+    ");
+    $stmt->execute(['barangay_id' => $barangay_id]);
+    $user_barangay_rank = $stmt->fetch(PDO::FETCH_ASSOC);
+    $user_barangay_rank_display = $user_barangay_rank ? "#{$user_barangay_rank['rank_position']}" : "Not Ranked";
+
+    // Fetch regional rankings (group by city and province)
+    $stmt = $pdo->prepare("
+        SELECT 
+            b.city, 
+            b.province, 
+            SUM(r.total_trees_planted) as total_trees,
+            RANK() OVER (ORDER BY SUM(r.total_trees_planted) DESC) as region_rank
+        FROM rankings r
+        JOIN barangays b ON r.barangay_id = b.barangay_id
+        GROUP BY b.city, b.province
+        ORDER BY region_rank ASC
+        LIMIT 10
+    ");
+    $stmt->execute();
+    $regional_rankings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch the top 1 region (for minimal display)
+    $stmt = $pdo->prepare("
+        SELECT 
+            b.city, 
+            b.province, 
+            SUM(r.total_trees_planted) as total_trees,
+            RANK() OVER (ORDER BY SUM(r.total_trees_planted) DESC) as region_rank
+        FROM rankings r
+        JOIN barangays b ON r.barangay_id = b.barangay_id
+        GROUP BY b.city, b.province
+        ORDER BY region_rank ASC
+        LIMIT 1
+    ");
+    $stmt->execute();
+    $top_region = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Find the user's region rank
+    $stmt = $pdo->prepare("
+        SELECT 
+            region_rank
+        FROM (
+            SELECT 
+                b.city, 
+                b.province, 
+                SUM(r.total_trees_planted) as total_trees,
+                RANK() OVER (ORDER BY SUM(r.total_trees_planted) DESC) as region_rank
+            FROM rankings r
+            JOIN barangays b ON r.barangay_id = b.barangay_id
+            GROUP BY b.city, b.province
+        ) ranked_regions
+        WHERE city = :city AND province = :province
+    ");
+    $stmt->execute([
+        'city' => $barangay['city'],
+        'province' => $barangay['province']
+    ]);
+    $user_region_rank = $stmt->fetchColumn();
+    $user_region_rank_display = $user_region_rank !== false ? "#$user_region_rank" : "Not Ranked";
 
     // Define the uploads directory path
     $upload_dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR;
@@ -78,7 +163,7 @@ try {
         }
     }
 
-    // Handle profile update
+    // Handle profile update (same as dashboard.php and submit.php)
     $profile_error = '';
     $profile_success = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
@@ -206,7 +291,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Tree Planting Initiative</title>
+    <title>Leaderboard - Tree Planting Initiative</title>
     <style>
         * {
             margin: 0;
@@ -341,6 +426,90 @@ try {
             font-size: 18px;
         }
 
+        .card {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .card h2 {
+            font-size: 28px;
+            margin-bottom: 15px;
+        }
+
+        .card p {
+            font-size: 18px;
+        }
+
+        .ranking-section {
+            margin-bottom: 40px;
+        }
+
+        .ranking-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .ranking-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .ranking-card h2 {
+            font-size: 24px;
+            color: #1e3a8a;
+            margin-bottom: 15px;
+        }
+
+        .ranking-card p {
+            font-size: 16px;
+            color: #666;
+        }
+
+        .ranking-table {
+            background: #fff;
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        .ranking-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .ranking-table th, .ranking-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e7ff;
+            font-size: 16px;
+        }
+
+        .ranking-table th {
+            background: #f5f7fa;
+            color: #1e3a8a;
+        }
+
+        .ranking-table tr.highlight {
+            background: #d1fae5;
+            font-weight: bold;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -361,9 +530,29 @@ try {
             padding: 30px;
             border-radius: 15px;
             width: 90%;
-            max-width: 500px;
-            margin: 150px auto;
+            max-width: 600px;
+            margin: 100px auto;
             position: relative;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .modal-content::-webkit-scrollbar-track {
+            background: #f5f7fa;
+            border-radius: 4px;
+        }
+
+        .modal-content::-webkit-scrollbar-thumb {
+            background: #4f46e5;
+            border-radius: 4px;
+        }
+
+        .modal-content::-webkit-scrollbar-thumb:hover {
+            background: #7c3aed;
         }
 
         .modal-content .close-btn {
@@ -463,136 +652,6 @@ try {
             background: #7c3aed;
         }
 
-        .card {
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
-            color: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-            margin-bottom: 30px;
-        }
-
-        .card .details {
-            display: flex;
-            justify-content: space-between;
-            font-size: 18px;
-        }
-
-        .card .details h2 {
-            font-size: 28px;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-        }
-
-        .stat-box {
-            background: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .stat-box h3 {
-            font-size: 20px;
-            margin-bottom: 15px;
-            color: #1e3a8a;
-        }
-
-        .stat-box .chart {
-            height: 120px;
-            background: #e0e7ff;
-            border-radius: 10px;
-        }
-
-        .stat-box .podium {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto;
-            position: relative;
-        }
-
-        .stat-box .podium .steps {
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            height: 80px;
-        }
-
-        .stat-box .podium .step {
-            background: #e0e7ff;
-            border-radius: 5px;
-        }
-
-        .stat-box .podium .step.left {
-            width: 35px;
-            height: 50px;
-        }
-
-        .stat-box .podium .step.center {
-            width: 50px;
-            height: 80px;
-            background: #d1d5db;
-        }
-
-        .stat-box .podium .step.right {
-            width: 35px;
-            height: 60px;
-        }
-
-        .stat-box .podium .rank {
-            position: absolute;
-            top: 35px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 20px;
-            color: #1e3a8a;
-            font-weight: bold;
-        }
-
-        .stat-box ul {
-            list-style: none;
-        }
-
-        .stat-box ul li {
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e7ff;
-            font-size: 16px;
-        }
-
-        .recent-activities ul li {
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .download-btn {
-            display: block;
-            background: #4f46e5;
-            color: #fff;
-            text-align: center;
-            padding: 15px;
-            border-radius: 10px;
-            text-decoration: none;
-            margin-top: 30px;
-            font-size: 16px;
-        }
-
-        .download-btn:hover {
-            background: #7c3aed;
-        }
-
-        .error-message {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-        }
-
         /* Mobile Responsive Design */
         @media (max-width: 768px) {
             .container {
@@ -654,68 +713,39 @@ try {
                 padding: 20px;
             }
 
-            .card .details {
-                font-size: 16px;
-            }
-
-            .card .details h2 {
+            .card h2 {
                 font-size: 24px;
             }
 
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 20px;
+            .card p {
+                font-size: 16px;
             }
 
-            .stat-box {
-                padding: 20px;
+            .ranking-card h2 {
+                font-size: 20px;
             }
 
-            .stat-box h3 {
-                font-size: 18px;
-            }
-
-            .stat-box .podium {
-                width: 100px;
-                height: 100px;
-            }
-
-            .stat-box .podium .steps {
-                height: 70px;
-            }
-
-            .stat-box .podium .step.left {
-                width: 30px;
-                height: 40px;
-            }
-
-            .stat-box .podium .step.center {
-                width: 40px;
-                height: 70px;
-            }
-
-            .stat-box .podium .step.right {
-                width: 30px;
-                height: 50px;
-            }
-
-            .stat-box .podium .rank {
-                top: 30px;
-                font-size: 18px;
-            }
-
-            .stat-box ul li {
+            .ranking-card p {
                 font-size: 14px;
             }
 
             .modal-content {
                 padding: 20px;
-                margin: 100px auto;
+                margin: 80px auto;
                 max-width: 90%;
             }
 
             .modal-content h2 {
                 font-size: 24px;
+            }
+
+            .modal-content .ranking-table {
+                padding: 15px;
+            }
+
+            .modal-content .ranking-table th, .modal-content .ranking-table td {
+                padding: 10px;
+                font-size: 14px;
             }
 
             .modal-content label {
@@ -751,7 +781,7 @@ try {
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
             <?php endif; ?>
             <div class="header">
-                <h1>Tree Planting Dashboard</h1>
+                <h1>Leaderboard</h1>
                 <div class="search-bar">
                     <input type="text" placeholder="Search functionalities..." id="searchInput">
                     <div class="search-results" id="searchResults"></div>
@@ -762,59 +792,123 @@ try {
                 </div>
             </div>
             <div class="card">
-                <div class="details">
-                    <div>
-                        <p>Trees Planted</p>
-                        <h2><?php echo $user['trees_planted']; ?></h2>
-                    </div>
-                    <div>
-                        <p>Eco Points</p>
-                        <h2><?php echo $user['eco_points']; ?></h2>
-                    </div>
+                <h2>Your Rankings</h2>
+                <p>Rank in <?php echo htmlspecialchars($barangay_name); ?>: <?php echo htmlspecialchars(str_replace('#', '', $user_rank_display)); ?></p>
+                <p><?php echo htmlspecialchars($barangay_name); ?> Rank: <?php echo htmlspecialchars(str_replace('#', '', $user_barangay_rank_display)); ?> with <?php echo htmlspecialchars($user_barangay_rank['total_trees_planted'] ?? 0); ?> trees</p>
+                <p>Region <?php echo htmlspecialchars($barangay['city'] . ', ' . $barangay['province']); ?> Rank: <?php echo htmlspecialchars(str_replace('#', '', $user_region_rank_display)); ?></p>
+            </div>
+            <div class="ranking-section">
+                <div class="ranking-card" id="usersRankBtn">
+                    <h2>Top Users in <?php echo htmlspecialchars($barangay_name); ?></h2>
+                    <p>Your Rank: <?php echo htmlspecialchars(str_replace('#', '', $user_rank_display)); ?></p>
                 </div>
             </div>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <h3>CO₂ Offset</h3>
-                    <p><?php echo $user['co2_offset']; ?> kg</p>
-                    <div class="chart"></div>
-                </div>
-                <div class="stat-box">
-                    <h3>Your Rank in Barangay</h3>
-                    <div class="podium">
-                        <div class="steps">
-                            <div class="step left"></div>
-                            <div class="step center"></div>
-                            <div class="step right"></div>
-                        </div>
-                        <div class="rank"><?php echo $user_rank_display; ?></div>
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <h3>Upcoming Events</h3>
-                    <ul>
-                        <?php foreach ($events as $event): ?>
-                            <li>
-                                <?php echo htmlspecialchars($event['title']); ?> - 
-                                <?php echo date('M d', strtotime($event['event_date'])); ?> at 
-                                <?php echo htmlspecialchars($event['location']); ?>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-                <div class="stat-box recent-activities">
-                    <h3>Recent Activities</h3>
-                    <ul>
-                        <?php foreach ($activities as $activity): ?>
-                            <li>
-                                <span><?php echo htmlspecialchars($activity['description']); ?></span>
-                                <span><?php echo date('M d', strtotime($activity['created_at'])); ?></span>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
+            <div class="ranking-section">
+                <div class="ranking-card" id="barangaysRankBtn">
+                    <h2>Top Barangays</h2>
+                    <?php if ($top_barangay): ?>
+                        <p>#1: <?php echo htmlspecialchars($top_barangay['name']); ?>, <?php echo htmlspecialchars($top_barangay['city'] . ', ' . $top_barangay['province']); ?> (<?php echo htmlspecialchars($top_barangay['total_trees_planted']); ?> trees)</p>
+                    <?php else: ?>
+                        <p>No barangay rankings available.</p>
+                    <?php endif; ?>
                 </div>
             </div>
-            <a href="history.php" class="download-btn">View Submission History</a>
+            <div class="ranking-section">
+                <div class="ranking-card" id="regionsRankBtn">
+                    <h2>Top Regions</h2>
+                    <?php if ($top_region): ?>
+                        <p>#1: <?php echo htmlspecialchars($top_region['city'] . ', ' . $top_region['province']); ?> (<?php echo htmlspecialchars($top_region['total_trees']); ?> trees)</p>
+                    <?php else: ?>
+                        <p>No regional rankings available.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Users Modal -->
+    <div class="modal" id="usersRankModal">
+        <div class="modal-content">
+            <span class="close-btn" id="closeUsersRankModal">×</span>
+            <h2>Top Users in <?php echo htmlspecialchars($barangay_name); ?></h2>
+            <div class="ranking-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Username</th>
+                            <th>Trees Planted</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($top_users as $top_user): ?>
+                            <tr <?php echo $top_user['user_id'] == $user_id ? 'class="highlight"' : ''; ?>>
+                                <td><?php echo htmlspecialchars($top_user['user_rank']); ?></td>
+                                <td><?php echo htmlspecialchars($top_user['username']); ?></td>
+                                <td><?php echo htmlspecialchars($top_user['trees_planted']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Barangays Modal -->
+    <div class="modal" id="barangaysRankModal">
+        <div class="modal-content">
+            <span class="close-btn" id="closeBarangaysRankModal">×</span>
+            <h2>Top Barangays</h2>
+            <div class="ranking-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Barangay</th>
+                            <th>City, Province</th>
+                            <th>Total Trees Planted</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($barangay_rankings as $ranking): ?>
+                            <tr <?php echo $ranking['barangay_id'] == $barangay_id ? 'class="highlight"' : ''; ?>>
+                                <td><?php echo htmlspecialchars($ranking['rank_position']); ?></td>
+                                <td><?php echo htmlspecialchars($ranking['name']); ?></td>
+                                <td><?php echo htmlspecialchars($ranking['city'] . ', ' . $ranking['province']); ?></td>
+                                <td><?php echo htmlspecialchars($ranking['total_trees_planted']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Regions Modal -->
+    <div class="modal" id="regionsRankModal">
+        <div class="modal-content">
+            <span class="close-btn" id="closeRegionsRankModal">×</span>
+            <h2>Top Regions</h2>
+            <div class="ranking-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>City, Province</th>
+                            <th>Total Trees Planted</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($regional_rankings as $region): ?>
+                            <tr <?php echo ($region['city'] == $barangay['city'] && $region['province'] == $barangay['province']) ? 'class="highlight"' : ''; ?>>
+                                <td><?php echo htmlspecialchars($region['region_rank']); ?></td>
+                                <td><?php echo htmlspecialchars($region['city'] . ', ' . $region['province']); ?></td>
+                                <td><?php echo htmlspecialchars($region['total_trees']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -962,6 +1056,63 @@ try {
         passwordModal.addEventListener('click', function(e) {
             if (e.target === passwordModal) {
                 passwordModal.classList.remove('active');
+            }
+        });
+
+        // Top Users modal functionality
+        const usersRankBtn = document.querySelector('#usersRankBtn');
+        const usersRankModal = document.querySelector('#usersRankModal');
+        const closeUsersRankModal = document.querySelector('#closeUsersRankModal');
+
+        usersRankBtn.addEventListener('click', function() {
+            usersRankModal.classList.add('active');
+        });
+
+        closeUsersRankModal.addEventListener('click', function() {
+            usersRankModal.classList.remove('active');
+        });
+
+        usersRankModal.addEventListener('click', function(e) {
+            if (e.target === usersRankModal) {
+                usersRankModal.classList.remove('active');
+            }
+        });
+
+        // Top Barangays modal functionality
+        const barangaysRankBtn = document.querySelector('#barangaysRankBtn');
+        const barangaysRankModal = document.querySelector('#barangaysRankModal');
+        const closeBarangaysRankModal = document.querySelector('#closeBarangaysRankModal');
+
+        barangaysRankBtn.addEventListener('click', function() {
+            barangaysRankModal.classList.add('active');
+        });
+
+        closeBarangaysRankModal.addEventListener('click', function() {
+            barangaysRankModal.classList.remove('active');
+        });
+
+        barangaysRankModal.addEventListener('click', function(e) {
+            if (e.target === barangaysRankModal) {
+                barangaysRankModal.classList.remove('active');
+            }
+        });
+
+        // Top Regions modal functionality
+        const regionsRankBtn = document.querySelector('#regionsRankBtn');
+        const regionsRankModal = document.querySelector('#regionsRankModal');
+        const closeRegionsRankModal = document.querySelector('#closeRegionsRankModal');
+
+        regionsRankBtn.addEventListener('click', function() {
+            regionsRankModal.classList.add('active');
+        });
+
+        closeRegionsRankModal.addEventListener('click', function() {
+            regionsRankModal.classList.remove('active');
+        });
+
+        regionsRankModal.addEventListener('click', function(e) {
+            if (e.target === regionsRankModal) {
+                regionsRankModal.classList.remove('active');
             }
         });
     </script>
