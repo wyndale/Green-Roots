@@ -26,6 +26,9 @@ try {
 
     $barangay_id = $user['barangay_id'];
 
+    // Convert profile picture to base64 for display
+    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+
     // Define the uploads directory path
     $upload_dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR;
     $upload_dir_relative = '../uploads/';
@@ -138,125 +141,6 @@ try {
         }
     }
 
-    // Handle profile update (same as dashboard.php)
-    $profile_error = '';
-    $profile_success = '';
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
-        $new_username = trim($_POST['username']);
-        $new_email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
-        $new_phone = trim($_POST['phone_number']);
-
-        // Validate inputs
-        if (empty($new_username) || empty($new_email)) {
-            $profile_error = 'Username and email are required.';
-        } elseif (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-            $profile_error = 'Invalid email format.';
-        } elseif (!empty($new_phone) && !preg_match('/^\+?\d{1,4}[\s-]?\d{1,15}$/', $new_phone)) {
-            $profile_error = 'Invalid phone number format.';
-        } else {
-            // Check if username or email is already taken by another user
-            $stmt = $pdo->prepare("
-                SELECT COUNT(*) 
-                FROM users 
-                WHERE (username = :username OR email = :email) 
-                AND user_id != :user_id
-            ");
-            $stmt->execute([
-                'username' => $new_username,
-                'email' => $new_email,
-                'user_id' => $user_id
-            ]);
-            if ($stmt->fetchColumn() > 0) {
-                $profile_error = 'Username or email already taken.';
-            } else {
-                // Handle profile picture upload
-                $profile_picture = $user['profile_picture'];
-                if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-                    $file_tmp = $_FILES['profile_picture']['tmp_name'];
-                    $file_name = $_FILES['profile_picture']['name'];
-                    $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                    $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'ico', 'webp', 'svg'];
-
-                    if (!in_array($file_ext, $allowed_exts)) {
-                        $profile_error = 'Only JPG, JPEG, PNG, GIF, ICO, WEBP, and SVG files are allowed.';
-                    } elseif ($_FILES['profile_picture']['size'] > 15 * 1024 * 1024) { // 15MB limit
-                        $profile_error = 'File size must be less than 15MB.';
-                    } else {
-                        $new_file_name = 'profile_' . $user_id . '.' . $file_ext;
-                        $upload_path = $upload_dir . $new_file_name;
-                        $upload_path_relative = $upload_dir_relative . $new_file_name;
-
-                        // Check if the directory is writable
-                        if (!is_writable($upload_dir)) {
-                            $profile_error = 'Uploads directory is not writable. Please contact the administrator.';
-                        } elseif (move_uploaded_file($file_tmp, $upload_path)) {
-                            $profile_picture = $upload_path_relative;
-                        } else {
-                            $profile_error = 'Failed to upload profile picture. Please try again.';
-                        }
-                    }
-                }
-
-                if (!$profile_error) {
-                    // Update user information
-                    $stmt = $pdo->prepare("
-                        UPDATE users 
-                        SET username = :username, email = :email, phone_number = :phone_number, profile_picture = :profile_picture
-                        WHERE user_id = :user_id
-                    ");
-                    $stmt->execute([
-                        'username' => $new_username,
-                        'email' => $new_email,
-                        'phone_number' => $new_phone ?: NULL, // Set to NULL if empty
-                        'profile_picture' => $profile_picture,
-                        'user_id' => $user_id
-                    ]);
-
-                    // Update session username
-                    $_SESSION['username'] = $new_username;
-                    $username = $new_username;
-                    $user['email'] = $new_email;
-                    $user['phone_number'] = $new_phone;
-                    $user['profile_picture'] = $profile_picture;
-
-                    $profile_success = 'Profile updated successfully!';
-                }
-            }
-        }
-    }
-
-    // Handle password change
-    $password_error = '';
-    $password_success = '';
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
-        $current_password = $_POST['current_password'];
-        $new_password = $_POST['new_password'];
-        $confirm_password = $_POST['confirm_password'];
-
-        // Validate inputs
-        if (empty($current_password) || empty($new_password) || empty($confirm_password)) {
-            $password_error = 'Please fill in all fields.';
-        } elseif ($new_password !== $confirm_password) {
-            $password_error = 'New passwords do not match.';
-        } elseif (strlen($new_password) < 8) {
-            $password_error = 'New password must be at least 8 characters long.';
-        } else {
-            // Verify current password
-            if (!password_verify($current_password, $user['password'])) {
-                $password_error = 'Current password is incorrect.';
-            } else {
-                // Update password
-                $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("UPDATE users SET password = :password WHERE user_id = :user_id");
-                $stmt->execute([
-                    'password' => $hashed_password,
-                    'user_id' => $user_id
-                ]);
-                $password_success = 'Password updated successfully!';
-            }
-        }
-    }
-
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
 }
@@ -267,6 +151,8 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Submit Tree Planting - Tree Planting Initiative</title>
+    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
             margin: 0;
@@ -276,7 +162,7 @@ try {
         }
 
         body {
-            background: linear-gradient(135deg, #e0e7ff, #f5f7fa);
+            background: #f5f7fa;
             color: #333;
         }
 
@@ -288,25 +174,27 @@ try {
         }
 
         .sidebar {
-            width: 100px;
+            width: 80px;
             background: #fff;
-            padding: 30px 0;
+            padding: 20px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 0 20px 20px 0;
+            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
         }
 
         .sidebar img.logo {
-            width: 60px;
-            margin-bottom: 30px;
+            width: 50px;
+            margin-bottom: 40px;
         }
 
         .sidebar a {
             margin: 20px 0;
             color: #666;
             text-decoration: none;
-            font-size: 28px;
+            font-size: 24px;
+            transition: color 0.3s;
         }
 
         .sidebar a:hover {
@@ -325,7 +213,7 @@ try {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
             width: 100%;
             position: relative;
         }
@@ -341,7 +229,7 @@ try {
             background: #fff;
             padding: 8px 15px;
             border-radius: 25px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             position: relative;
             width: 300px;
         }
@@ -360,7 +248,7 @@ try {
             left: 0;
             background: #fff;
             width: 100%;
-            border-radius: 10px;
+            border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             display: none;
             z-index: 10;
@@ -384,6 +272,7 @@ try {
         }
 
         .header .profile {
+            position: relative;
             display: flex;
             align-items: center;
             gap: 15px;
@@ -405,11 +294,45 @@ try {
             font-size: 18px;
         }
 
+        .profile-dropdown {
+            position: absolute;
+            top: 60px;
+            right: 0;
+            background: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            display: none;
+            z-index: 10;
+        }
+
+        .profile-dropdown.active {
+            display: block;
+        }
+
+        .profile-dropdown .email {
+            padding: 15px 20px;
+            color: #666;
+            font-size: 16px;
+            border-bottom: 1px solid #e0e7ff;
+        }
+
+        .profile-dropdown a {
+            display: block;
+            padding: 15px 20px;
+            color: #333;
+            text-decoration: none;
+            font-size: 16px;
+        }
+
+        .profile-dropdown a:hover {
+            background: #e0e7ff;
+        }
+
         .submission-form {
             background: #fff;
             padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
             max-width: 600px;
         }
@@ -497,138 +420,17 @@ try {
             background: #7c3aed;
         }
 
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 100;
-        }
-
-        .modal.active {
-            display: block;
-        }
-
-        .modal-content {
-            background: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            width: 90%;
-            max-width: 500px;
-            margin: 150px auto;
-            position: relative;
-        }
-
-        .modal-content .close-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            font-size: 28px;
-            cursor: pointer;
-            color: #666;
-        }
-
-        .modal-content h2 {
-            font-size: 28px;
-            color: #1e3a8a;
-            margin-bottom: 25px;
-        }
-
-        .modal-content .error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-            font-size: 16px;
-        }
-
-        .modal-content .success {
-            background: #d1fae5;
-            color: #10b981;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-            font-size: 16px;
-        }
-
-        .modal-content .error.show,
-        .modal-content .success.show {
-            display: block;
-        }
-
-        .modal-content .form-group {
-            margin-bottom: 25px;
-        }
-
-        .modal-content label {
-            display: block;
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 8px;
-        }
-
-        .modal-content input {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
-            font-size: 16px;
-            outline: none;
-        }
-
-        .modal-content input:focus {
-            border-color: #4f46e5;
-        }
-
-        .modal-content input[type="submit"] {
-            background: #4f46e5;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            transition: background 0.3s;
-            padding: 12px;
-            font-size: 16px;
-        }
-
-        .modal-content input[type="submit"]:hover {
-            background: #7c3aed;
-        }
-
-        .modal-content .change-password-btn {
-            display: block;
-            background: #4f46e5;
-            color: #fff;
-            text-align: center;
-            padding: 12px;
-            border-radius: 5px;
-            text-decoration: none;
-            margin-bottom: 15px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-
-        .modal-content .change-password-btn:hover {
-            background: #7c3aed;
-        }
-
         .error-message {
             background: #fee2e2;
             color: #dc2626;
             padding: 12px;
-            border-radius: 5px;
+            border-radius: 15px;
             margin-bottom: 20px;
             text-align: center;
             font-size: 16px;
             width: 100%;
             max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
         /* Mobile Responsive Design */
@@ -643,12 +445,18 @@ try {
                 justify-content: space-around;
                 position: fixed;
                 bottom: 0;
-                box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+                border-radius: 15px 15px 0 0;
+                box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
             }
 
             .sidebar img.logo {
                 display: none;
+            }
+
+            .sidebar a {
+                margin: 0 15px;
+                font-size: 20px;
             }
 
             .main-content {
@@ -659,6 +467,7 @@ try {
             .header {
                 flex-direction: column;
                 align-items: flex-start;
+                gap: 15px;
             }
 
             .header h1 {
@@ -675,8 +484,12 @@ try {
                 font-size: 14px;
             }
 
+            .header .search-bar .search-results {
+                top: 40px;
+            }
+
             .header .profile {
-                margin-top: 15px;
+                margin-top: 0;
             }
 
             .header .profile img {
@@ -686,6 +499,12 @@ try {
 
             .header .profile span {
                 font-size: 16px;
+            }
+
+            .profile-dropdown {
+                top: 50px;
+                width: 200px;
+                right: 0;
             }
 
             .submission-form {
@@ -711,28 +530,7 @@ try {
                 font-size: 14px;
             }
 
-            .modal-content {
-                padding: 20px;
-                margin: 100px auto;
-                max-width: 90%;
-            }
-
-            .modal-content h2 {
-                font-size: 24px;
-            }
-
-            .modal-content label {
-                font-size: 14px;
-            }
-
-            .modal-content input {
-                padding: 10px;
-                font-size: 14px;
-            }
-
-            .modal-content .change-password-btn,
-            .modal-content input[type="submit"] {
-                padding: 10px;
+            .error-message {
                 font-size: 14px;
             }
         }
@@ -742,12 +540,14 @@ try {
     <div class="container">
         <div class="sidebar">
             <img src="logo.png" alt="Logo" class="logo">
-            <a href="dashboard.php" title="Dashboard">🏠</a>
-            <a href="submit.php" title="Submit Planting">🌳</a>
-            <a href="leaderboard.php" title="Leaderboard">📊</a>
-            <a href="rewards.php" title="Rewards">🎁</a>
-            <a href="events.php" title="Events">📅</a>
-            <a href="logout.php" title="Logout">🚪</a>
+            <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
+            <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
+            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -761,7 +561,12 @@ try {
                 </div>
                 <div class="profile" id="profileBtn">
                     <span><?php echo htmlspecialchars($username); ?></span>
-                    <img src="<?php echo $user['profile_picture'] ? htmlspecialchars($user['profile_picture']) : 'profile.jpg'; ?>" alt="Profile">
+                    <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
+                    <div class="profile-dropdown" id="profileDropdown">
+                        <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
+                        <a href="account_settings.php">Account</a>
+                        <a href="logout.php">Logout</a>
+                    </div>
                 </div>
             </div>
             <div class="submission-form">
@@ -792,71 +597,6 @@ try {
         </div>
     </div>
 
-    <!-- Profile Edit Modal -->
-    <div class="modal" id="profileModal">
-        <div class="modal-content">
-            <span class="close-btn" id="closeProfileModal">×</span>
-            <h2>Edit Profile</h2>
-            <?php if ($profile_error): ?>
-                <div class="error show"><?php echo htmlspecialchars($profile_error); ?></div>
-            <?php endif; ?>
-            <?php if ($profile_success): ?>
-                <div class="success show"><?php echo htmlspecialchars($profile_success); ?></div>
-            <?php endif; ?>
-            <form method="POST" action="" enctype="multipart/form-data">
-                <input type="hidden" name="update_profile" value="1">
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>" required>
-                </div>
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" required>
-                </div>
-                <div class="form-group">
-                    <label for="phone_number">Phone Number (Optional)</label>
-                    <input type="text" id="phone_number" name="phone_number" value="<?php echo htmlspecialchars($user['phone_number'] ?? ''); ?>">
-                </div>
-                <div class="form-group">
-                    <label for="profile_picture">Profile Picture</label>
-                    <input type="file" id="profile_picture" name="profile_picture" accept="image/*">
-                </div>
-                <button type="button" class="change-password-btn" id="changePasswordBtn">Change Password</button>
-                <input type="submit" value="Update Profile">
-            </form>
-        </div>
-    </div>
-
-    <!-- Change Password Modal -->
-    <div class="modal" id="passwordModal">
-        <div class="modal-content">
-            <span class="close-btn" id="closePasswordModal">×</span>
-            <h2>Change Password</h2>
-            <?php if ($password_error): ?>
-                <div class="error show"><?php echo htmlspecialchars($password_error); ?></div>
-            <?php endif; ?>
-            <?php if ($password_success): ?>
-                <div class="success show"><?php echo htmlspecialchars($password_success); ?></div>
-            <?php endif; ?>
-            <form method="POST" action="">
-                <input type="hidden" name="change_password" value="1">
-                <div class="form-group">
-                    <label for="current_password">Current Password</label>
-                    <input type="password" id="current_password" name="current_password" required>
-                </div>
-                <div class="form-group">
-                    <label for="new_password">New Password</label>
-                    <input type="password" id="new_password" name="new_password" required>
-                </div>
-                <div class="form-group">
-                    <label for="confirm_password">Confirm New Password</label>
-                    <input type="password" id="confirm_password" name="confirm_password" required>
-                </div>
-                <input type="submit" value="Change Password">
-            </form>
-        </div>
-    </div>
-
     <script>
         // Search bar functionality
         const functionalities = [
@@ -865,7 +605,8 @@ try {
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
-            { name: 'Submission History', url: 'history.php' },
+            { name: 'History', url: 'history.php' },
+            { name: 'Feedback', url: 'feedback.php' },
             { name: 'Logout', url: 'logout.php' }
         ];
 
@@ -877,9 +618,9 @@ try {
             searchResults.innerHTML = '';
             searchResults.classList.remove('active');
 
-            if (query) {
+            if (query.length > 0) {
                 const matches = functionalities.filter(func => 
-                    func.name.toLowerCase().includes(query)
+                    func.name.toLowerCase().startsWith(query)
                 );
 
                 if (matches.length > 0) {
@@ -900,42 +641,17 @@ try {
             }
         });
 
-        // Profile edit modal functionality
+        // Profile dropdown functionality
         const profileBtn = document.querySelector('#profileBtn');
-        const profileModal = document.querySelector('#profileModal');
-        const closeProfileModal = document.querySelector('#closeProfileModal');
+        const profileDropdown = document.querySelector('#profileDropdown');
 
         profileBtn.addEventListener('click', function() {
-            profileModal.classList.add('active');
+            profileDropdown.classList.toggle('active');
         });
 
-        closeProfileModal.addEventListener('click', function() {
-            profileModal.classList.remove('active');
-        });
-
-        profileModal.addEventListener('click', function(e) {
-            if (e.target === profileModal) {
-                profileModal.classList.remove('active');
-            }
-        });
-
-        // Change password modal functionality
-        const changePasswordBtn = document.querySelector('#changePasswordBtn');
-        const passwordModal = document.querySelector('#passwordModal');
-        const closePasswordModal = document.querySelector('#closePasswordModal');
-
-        changePasswordBtn.addEventListener('click', function() {
-            profileModal.classList.remove('active');
-            passwordModal.classList.add('active');
-        });
-
-        closePasswordModal.addEventListener('click', function() {
-            passwordModal.classList.remove('active');
-        });
-
-        passwordModal.addEventListener('click', function(e) {
-            if (e.target === passwordModal) {
-                passwordModal.classList.remove('active');
+        document.addEventListener('click', function(e) {
+            if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
+                profileDropdown.classList.remove('active');
             }
         });
 

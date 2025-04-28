@@ -1,12 +1,11 @@
-based on the attached image that was the design that i want note that only the design im looking on it since the project that im working on is different think of the features of it as placeholders the first image is for desktop and the other one is for responsive design mobile, so now what i wanted for you is to create a web application using html, css, js, PHP, using VS Code as IDE and XAMPP for local development. Now I'll explain the application that i have in my mind this application is Tree planting application that aims to provide people a side lines to earn at the same time solving a real-world problem such as deforestation and climate change, how? it is because the individual that are registered can earn by planting trees, when they are registered they can plant as many as they want and provide a photos, exact location on where they did planted it after they planted it they can submit it to the form on the app and they will going to wait for their submission to be approved once they submit the entry will be marked as pending since i want the application to have also a validators who's responsible on checking the user's entry and that validator is near to the users barangay the validators are same barangay as the user since they are registered by barangay of course that's not the only measure that need to add to that first feature of the app since we should secure the app to prevent duplicate entry, spam, illegal entry, fake entries, and etc. the second feature is i want to have a competion something like a leaderboards each barangay in order for the user to engage more they are rank based on their barangay and the country on the philippines, next feature is the reward for their planted trees they have two options such as they can withdraw it for cash or a reward vouchers for grocery or other goods, the next feature is events each user's will be informed for the tree planting events that will be held somewhere, of course they can join and earn money by joining, so by the dashboard of each user's they can see their number of trees planted, their ecoPoints that will be use for rewards, recent activity, ranking of the barangay, upcoming events, CO₂ Offset example 220kg by the 10 trees planted and also i want to have history so that user can see their pending submission what are the entries that has been counted or approved, etc. i think that all for now we will improve that along the way, just note that you must follow the UI that i attached but replace the features on the image by these features i have on this project
-
-
 -- Table for barangays
 CREATE TABLE barangays (
     barangay_id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     city VARCHAR(100) NOT NULL,
     province VARCHAR(100) NOT NULL,
+    region VARCHAR(100) NOT NULL,
+    country VARCHAR(100) NOT NULL,
     UNIQUE(name, city, province)
 );
 

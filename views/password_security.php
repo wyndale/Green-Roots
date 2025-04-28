@@ -1,5 +1,5 @@
 <?php
-// Start session and handle PHP logic first
+// Start session and handle PHP logic
 session_start();
 require_once '../includes/config.php';
 
@@ -14,7 +14,11 @@ $username = $_SESSION['username'];
 
 // Fetch user data
 try {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
+    $stmt = $pdo->prepare("
+        SELECT user_id, username, email, password, profile_picture
+        FROM users 
+        WHERE user_id = :user_id
+    ");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -27,38 +31,37 @@ try {
     // Convert profile picture to base64 for display
     $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
 
-    // Calculate CO2 Offset: 1 tree offsets ~22 kg CO2 per year
-    $co2_offset = $user['trees_planted'] * 22; // in kg
-    $user['co2_offset'] = $co2_offset;
+    // Handle Password Change
+    $password_error = '';
+    $password_success = '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
+        $current_password = $_POST['current_password'];
+        $new_password = $_POST['new_password'];
+        $confirm_password = $_POST['confirm_password'];
 
-    // Fetch the user's rank within their barangay
-    $stmt = $pdo->prepare("
-        SELECT user_rank
-        FROM (
-            SELECT user_id, 
-                   RANK() OVER (ORDER BY trees_planted DESC) as user_rank
-            FROM users
-            WHERE barangay_id = :barangay_id
-        ) ranked_users
-        WHERE user_id = :user_id
-    ");
-    $stmt->execute([
-        'barangay_id' => $user['barangay_id'],
-        'user_id' => $user_id
-    ]);
-    $user_rank = $stmt->fetchColumn();
-    $user_rank_display = $user_rank !== false ? $user_rank : "Not Ranked";
-
-    // Fetch upcoming events
-    $stmt = $pdo->prepare("
-        SELECT title, event_date, location 
-        FROM events 
-        WHERE event_date >= CURDATE() 
-        ORDER BY event_date ASC 
-        LIMIT 3
-    ");
-    $stmt->execute();
-    $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Validate inputs
+        if (empty($current_password) || empty($new_password) || empty($confirm_password)) {
+            $password_error = 'Please fill in all fields.';
+        } elseif ($new_password !== $confirm_password) {
+            $password_error = 'New passwords do not match.';
+        } elseif (strlen($new_password) < 8) {
+            $password_error = 'New password must be at least 8 characters long.';
+        } else {
+            // Verify current password
+            if (!password_verify($current_password, $user['password'])) {
+                $password_error = 'Current password is incorrect.';
+            } else {
+                // Update password
+                $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare("UPDATE users SET password = :password WHERE user_id = :user_id");
+                $stmt->execute([
+                    'password' => $hashed_password,
+                    'user_id' => $user_id
+                ]);
+                $password_success = 'Password updated successfully!';
+            }
+        }
+    }
 
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
@@ -69,10 +72,9 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Tree Planting Initiative</title>
+    <title>Password & Security - Tree Planting Initiative</title>
     <link rel="icon" type="image/png" href="../assets/favicon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -84,6 +86,7 @@ try {
         body {
             background: #f5f7fa;
             color: #333;
+            overflow-x: hidden;
         }
 
         .container {
@@ -102,6 +105,11 @@ try {
             align-items: center;
             border-radius: 0 20px 20px 0;
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 100;
         }
 
         .sidebar img.logo {
@@ -124,13 +132,18 @@ try {
         .main-content {
             flex: 1;
             padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-left: 80px; /* Match sidebar width */
         }
 
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 40px;
+            margin-bottom: 20px;
+            width: 100%;
             position: relative;
         }
 
@@ -244,164 +257,115 @@ try {
             background: #e0e7ff;
         }
 
-        .card {
+        .account-nav {
+            width: 100%;
+            max-width: 800px;
+            background: #fff;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            padding: 15px 0;
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .account-nav a {
+            color: #666;
+            text-decoration: none;
+            font-size: 16px;
+            padding: 10px 20px;
+            transition: color 0.3s;
+        }
+
+        .account-nav a.active {
+            color: #4f46e5;
+            border-bottom: 2px solid #4f46e5;
+        }
+
+        .account-nav a:hover {
+            color: #4f46e5;
+        }
+
+        .account-section {
             background: #fff;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
             margin-bottom: 30px;
         }
 
-        .card .details {
-            display: flex;
-            justify-content: space-between;
-            font-size: 18px;
-            color: #333;
-        }
-
-        .card .details h2 {
+        .account-section h2 {
             font-size: 28px;
             color: #1e3a8a;
+            margin-bottom: 25px;
         }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
+        .account-section .error {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+            font-size: 16px;
         }
 
-        .stat-box {
-            background: #fff;
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            transition: transform 0.2s;
+        .account-section .success {
+            background: #d1fae5;
+            color: #10b981;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+            font-size: 16px;
         }
 
-        .stat-box:hover {
-            transform: translateY(-5px);
+        .account-section .error.show,
+        .account-section .success.show {
+            display: block;
         }
 
-        .stat-box h3 {
-            font-size: 20px;
-            margin-bottom: 15px;
-            color: #1e3a8a;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .account-section .form-group {
+            margin-bottom: 25px;
         }
 
-        .stat-box h3 .info-icon {
+        .account-section label {
+            display: block;
             font-size: 16px;
             color: #666;
-            cursor: help;
-            position: relative;
+            margin-bottom: 8px;
         }
 
-        .stat-box h3 .info-icon:hover .tooltip {
-            display: block;
-        }
-
-        .stat-box h3 .tooltip {
-            position: absolute;
-            top: -40px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #333;
-            color: #fff;
-            padding: 5px 10px;
+        .account-section input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e0e7ff;
             border-radius: 5px;
-            font-size: 14px;
-            white-space: nowrap;
-            display: none;
-            z-index: 10;
-        }
-
-        .stat-box h3 .tooltip::after {
-            content: '';
-            position: absolute;
-            bottom: -5px;
-            left: 50%;
-            transform: translateX(-50%);
-            border-width: 5px;
-            border-style: solid;
-            border-color: #333 transparent transparent transparent;
-        }
-
-        .stat-box canvas {
-            max-height: 150px;
-        }
-
-        .stat-box .podium {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto;
-            position: relative;
-        }
-
-        .stat-box .podium .steps {
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            height: 80px;
-        }
-
-        .stat-box .podium .step {
-            background: #e0e7ff;
-            border-radius: 5px;
-        }
-
-        .stat-box .podium .step.left {
-            width: 35px;
-            height: 50px;
-        }
-
-        .stat-box .podium .step.center {
-            width: 50px;
-            height: 80px;
-            background: #d1d5db;
-        }
-
-        .stat-box .podium .step.right {
-            width: 35px;
-            height: 60px;
-        }
-
-        .stat-box .podium .rank {
-            position: absolute;
-            top: 35px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 20px;
-            color: #1e3a8a;
-            font-weight: bold;
-        }
-
-        .stat-box ul {
-            list-style: none;
-        }
-
-        .stat-box ul li {
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e7ff;
             font-size: 16px;
+            outline: none;
         }
 
-        .download-btn {
-            display: block;
+        .account-section input:focus {
+            border-color: #4f46e5;
+        }
+
+        .account-section input[type="submit"] {
             background: #4f46e5;
             color: #fff;
-            text-align: center;
-            padding: 15px;
-            border-radius: 15px;
-            text-decoration: none;
-            margin-top: 30px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+            padding: 12px;
             font-size: 16px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            border-radius: 5px;
         }
 
-        .download-btn:hover {
+        .account-section input[type="submit"]:hover {
             background: #7c3aed;
         }
 
@@ -413,6 +377,8 @@ try {
             margin-bottom: 20px;
             text-align: center;
             font-size: 16px;
+            width: 100%;
+            max-width: 800px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
@@ -428,10 +394,11 @@ try {
                 justify-content: space-around;
                 position: fixed;
                 bottom: 0;
+                top: auto;
+                height: auto;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
-                z-index: 100;
             }
 
             .sidebar img.logo {
@@ -439,13 +406,14 @@ try {
             }
 
             .sidebar a {
-                margin: 0 10px;
+                margin: 0 15px;
                 font-size: 20px;
             }
 
             .main-content {
                 padding: 20px;
                 padding-bottom: 80px;
+                margin-left: 0;
             }
 
             .header {
@@ -455,7 +423,7 @@ try {
             }
 
             .header h1 {
-                font-size: 24px;
+                font-size: 28px;
             }
 
             .header .search-bar {
@@ -464,6 +432,7 @@ try {
             }
 
             .header .search-bar input {
+                width: 100%;
                 font-size: 14px;
             }
 
@@ -490,73 +459,48 @@ try {
                 right: 0;
             }
 
-            .card {
+            .account-nav {
+                flex-direction: column;
+                padding: 10px;
+            }
+
+            .account-nav a {
+                padding: 10px;
+                font-size: 14px;
+                border-bottom: 1px solid #e0e7ff;
+            }
+
+            .account-nav a:last-child {
+                border-bottom: none;
+            }
+
+            .account-nav a.active {
+                border-bottom: 2px solid #4f46e5;
+            }
+
+            .account-section {
                 padding: 20px;
             }
 
-            .card .details {
-                flex-direction: column;
-                gap: 15px;
-                font-size: 16px;
-            }
-
-            .card .details h2 {
+            .account-section h2 {
                 font-size: 24px;
             }
 
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-
-            .stat-box {
-                padding: 20px;
-            }
-
-            .stat-box h3 {
-                font-size: 18px;
-            }
-
-            .stat-box canvas {
-                max-height: 120px;
-            }
-
-            .stat-box .podium {
-                width: 100px;
-                height: 100px;
-            }
-
-            .stat-box .podium .steps {
-                height: 70px;
-            }
-
-            .stat-box .podium .step.left {
-                width: 30px;
-                height: 40px;
-            }
-
-            .stat-box .podium .step.center {
-                width: 40px;
-                height: 70px;
-            }
-
-            .stat-box .podium .step.right {
-                width: 30px;
-                height: 50px;
-            }
-
-            .stat-box .podium .rank {
-                top: 30px;
-                font-size: 18px;
-            }
-
-            .stat-box ul li {
+            .account-section label {
                 font-size: 14px;
-                padding: 8px 0;
             }
 
-            .download-btn {
+            .account-section input[type="password"] {
                 padding: 10px;
+                font-size: 14px;
+            }
+
+            .account-section input[type="submit"] {
+                padding: 10px;
+                font-size: 14px;
+            }
+
+            .error-message {
                 font-size: 14px;
             }
         }
@@ -580,7 +524,7 @@ try {
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
             <?php endif; ?>
             <div class="header">
-                <h1>Tree Planting Dashboard</h1>
+                <h1>Password & Security</h1>
                 <div class="search-bar">
                     <input type="text" placeholder="Search functionalities..." id="searchInput">
                     <div class="search-results" id="searchResults"></div>
@@ -595,54 +539,36 @@ try {
                     </div>
                 </div>
             </div>
-            <div class="card">
-                <div class="details">
-                    <div>
-                        <p>Trees Planted</p>
-                        <h2><?php echo $user['trees_planted']; ?></h2>
-                    </div>
-                    <div>
-                        <p>Eco Points</p>
-                        <h2><?php echo $user['eco_points']; ?></h2>
-                    </div>
-                </div>
+            <div class="account-nav">
+                <a href="account_settings.php">Account Settings</a>
+                <a href="profile.php">Profile</a>
+                <a href="password_security.php" class="active">Password & Security</a>
+                <a href="payment_methods.php">Payment Methods</a>
             </div>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <h3>
-                        CO₂ Offset
-                        <span class="info-icon">
-                            <i class="fas fa-info-circle"></i>
-                            <span class="tooltip">CO₂ Offset = The amount of pollution your trees have helped remove from the air!</span>
-                        </span>
-                    </h3>
-                    <canvas id="co2Chart"></canvas>
-                </div>
-                <div class="stat-box" onclick="window.location.href='leaderboard.php'">
-                    <h3>Your Rank in Barangay</h3>
-                    <div class="podium">
-                        <div class="steps">
-                            <div class="step left"></div>
-                            <div class="step center"></div>
-                            <div class="step right"></div>
-                        </div>
-                        <div class="rank"><?php echo $user_rank_display; ?></div>
+            <div class="account-section">
+                <?php if ($password_error): ?>
+                    <div class="error show"><?php echo htmlspecialchars($password_error); ?></div>
+                <?php endif; ?>
+                <?php if ($password_success): ?>
+                    <div class="success show"><?php echo htmlspecialchars($password_success); ?></div>
+                <?php endif; ?>
+                <form method="POST" action="">
+                    <input type="hidden" name="change_password" value="1">
+                    <div class="form-group">
+                        <label for="current_password">Current Password</label>
+                        <input type="password" id="current_password" name="current_password" required>
                     </div>
-                </div>
-                <div class="stat-box" onclick="window.location.href='events.php'">
-                    <h3>Upcoming Events</h3>
-                    <ul>
-                        <?php foreach ($events as $event): ?>
-                            <li>
-                                <?php echo htmlspecialchars($event['title']); ?> - 
-                                <?php echo date('M d', strtotime($event['event_date'])); ?> at 
-                                <?php echo htmlspecialchars($event['location']); ?>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
+                    <div class="form-group">
+                        <label for="new_password">New Password</label>
+                        <input type="password" id="new_password" name="new_password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm New Password</label>
+                        <input type="password" id="confirm_password" name="confirm_password" required>
+                    </div>
+                    <input type="submit" value="Change Password">
+                </form>
             </div>
-            <a href="history.php" class="download-btn">View Submission History</a>
         </div>
     </div>
 
@@ -701,37 +627,6 @@ try {
         document.addEventListener('click', function(e) {
             if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
                 profileDropdown.classList.remove('active');
-            }
-        });
-
-        // CO2 Offset Chart
-        const co2Offset = <?php echo $co2_offset; ?>;
-        const monthlyData = Array(12).fill(0).map((_, i) => co2Offset * (i + 1) / 12);
-        const ctx = document.getElementById('co2Chart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                datasets: [{
-                    label: 'CO₂ Offset (kg)',
-                    data: monthlyData,
-                    borderColor: '#4f46e5',
-                    backgroundColor: 'rgba(79, 70, 229, 0.2)',
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                scales: {
-                    y: {
-                        beginAtZero: true
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                }
             }
         });
     </script>
