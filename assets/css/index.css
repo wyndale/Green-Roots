@@ -1,0 +1,196 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Arial', sans-serif;
+}
+
+body {
+    background: #E8F5E9;
+    color: #333;
+    overflow-x: hidden;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+}
+
+.header h1 {
+    font-size: 28px;
+    color: #4CAF50;
+}
+
+.header .nav-links a {
+    margin-left: 20px;
+    text-decoration: none;
+    color: #fff;
+    font-weight: bold;
+    font-size: 15px;
+    background: linear-gradient(135deg, #4CAF50, #66BB6A); /* Gradient background for a modern look */
+    padding: 10px 15px; /* Reduced padding for smaller button size; Adjust padding here for larger/smaller buttons */
+    border-radius: 20px;
+    transition: transform 0.3s, box-shadow 0.3s;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px; /* Space between icon and text */
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.header .nav-links a:hover {
+    transform: translateY(-2px); /* Slight lift on hover */
+    box-shadow: 0 4px 10px rgba(68, 194, 72, 0.4); /* Glow effect on hover */
+}
+
+.header .nav-links a i {
+    font-size: 14px; /* Icon size */
+}
+
+.hero {
+    text-align: center;
+    padding: 50px 0;
+}
+
+.hero h2 {
+    font-size: 36px;
+    color: #4CAF50;
+    margin-bottom: 20px;
+}
+
+.hero p {
+    font-size: 18px;
+    color: #666;
+    margin-bottom: 30px;
+}
+
+.hero .cta-btn {
+    background: #4CAF50;
+    color: #fff;
+    padding: 15px 30px;
+    border-radius: 25px;
+    text-decoration: none;
+    font-size: 18px;
+    transition: background 0.3s;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.hero .cta-btn:hover {
+    background: #388E3C;
+}
+
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 35px 0;
+}
+
+.feature-box {
+    background: #fff;
+    padding: 20px; /* Reduced padding for smaller box size; Adjust padding here for larger/smaller feature boxes */
+    border-radius: 18px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    min-height: 165px; /* Adjusted min-height to fit smaller padding */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: transform 0.3s, box-shadow 0.3s; /* Smooth transition for hover effects */
+}
+
+.feature-box:hover {
+    transform: scale(1.05); /* Slight scale-up on hover */
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15); /* Enhanced shadow on hover */
+}
+
+.feature-box h3 {
+    font-size: 24px;
+    color: #4CAF50;
+    margin-bottom: 15px;
+}
+
+.feature-box p {
+    color: #555454;
+    font-size: 16px;
+}
+
+.footer {
+    text-align: center;
+    padding: 8px 0;
+    color: #666;
+    font-size: 14px;
+}
+
+/* Mobile Responsive Design */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+
+    .header {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .header .nav-links {
+        display: flex;
+        gap: 15px;
+    }
+
+    .header .nav-links a {
+        font-size: 14px;
+        padding: 6px 12px; /* Reduced padding for mobile; Adjust padding here for larger/smaller buttons on mobile */
+    }
+
+    .header .nav-links a i {
+        font-size: 12px; /* Smaller icon size on mobile */
+    }
+
+    .hero h2 {
+        font-size: 28px;
+    }
+
+    .hero p {
+        font-size: 16px;
+    }
+
+    .hero .cta-btn {
+        font-size: 16px;
+        padding: 12px 25px;
+    }
+
+    .features {
+        grid-template-columns: 1fr;
+        padding: 30px 0;
+    }
+
+    .feature-box {
+        padding: 15px; /* Reduced padding for mobile; Adjust padding here for larger/smaller feature boxes on mobile */
+        min-height: 155px; /* Adjusted min-height for mobile */
+    }
+
+    .feature-box h3 {
+        font-size: 20px;
+    }
+
+    .feature-box p {
+        font-size: 14px;
+    }
+
+    .footer {
+        padding: 25px 0;
+        font-size: 14px;
+    }
+}

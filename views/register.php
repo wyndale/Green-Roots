@@ -1,145 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Green Root - Register</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Arial', sans-serif;
-        }
-
-        body {
-            background: linear-gradient(135deg, #e0e7ff, #f5f7fa);
-            color: #333;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .register-container {
-            background: #fff;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 400px;
-        }
-
-        .register-container h2 {
-            font-size: 28px;
-            color: #1e3a8a;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .register-container .error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-        }
-
-        .register-container .success {
-            background: #d1fae5;
-            color: #10b981;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-        }
-
-        .register-container .error.show,
-        .register-container .success.show {
-            display: block;
-        }
-
-        .register-container .form-group {
-            margin-bottom: 20px;
-        }
-
-        .register-container label {
-            display: block;
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .register-container input[type="text"],
-        .register-container input[type="email"],
-        .register-container input[type="password"],
-        .register-container select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
-            font-size: 16px;
-            outline: none;
-            transition: border 0.3s;
-        }
-
-        .register-container input[type="text"]:focus,
-        .register-container input[type="email"]:focus,
-        .register-container input[type="password"]:focus,
-        .register-container select:focus {
-            border-color: #4f46e5;
-        }
-
-        .register-container input[type="submit"] {
-            background: #4f46e5;
-            color: #fff;
-            padding: 10px;
-            border: none;
-            border-radius: 5px;
-            width: 100%;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        .register-container input[type="submit"]:hover {
-            background: #7c3aed;
-        }
-
-        .register-container .links {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .register-container .links a {
-            color: #4f46e5;
-            text-decoration: none;
-            font-size: 14px;
-        }
-
-        .register-container .links a:hover {
-            text-decoration: underline;
-        }
-
-        /* Mobile Responsive Design */
-        @media (max-width: 768px) {
-            .register-container {
-                padding: 20px;
-                max-width: 90%;
-            }
-
-            .register-container h2 {
-                font-size: 24px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <?php
+<?php
     session_start();
     require_once '../includes/config.php';
 
@@ -158,6 +17,8 @@
             $error = 'Invalid CSRF token.';
         } else {
             // Sanitize and validate inputs
+            $first_name = filter_input(INPUT_POST, 'first_name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+            $last_name = filter_input(INPUT_POST, 'last_name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
             $username = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
             $email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
             $password = $_POST['password'];
@@ -165,8 +26,12 @@
             $barangay_id = filter_input(INPUT_POST, 'barangay_id', FILTER_SANITIZE_NUMBER_INT);
 
             // Basic validation
-            if (empty($username) || empty($email) || empty($password) || empty($confirm_password) || empty($barangay_id)) {
+            if (empty($first_name) || empty($last_name) || empty($username) || empty($email) || empty($password) || empty($confirm_password) || empty($barangay_id)) {
                 $error = 'Please fill in all fields.';
+            } elseif (strlen($first_name) < 2) {
+                $error = 'First name must be at least 2 characters long.';
+            } elseif (strlen($last_name) < 2) {
+                $error = 'Last name must be at least 2 characters long.';
             } elseif (strlen($username) < 3) {
                 $error = 'Username must be at least 3 characters long.';
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -200,10 +65,12 @@
 
                             // Insert user into database with default role 'user'
                             $stmt = $pdo->prepare("
-                                INSERT INTO users (username, password, email, role, barangay_id)
-                                VALUES (:username, :password, :email, 'user', :barangay_id)
+                                INSERT INTO users (first_name, last_name, username, password, email, role, barangay_id)
+                                VALUES (:first_name, :last_name, :username, :password, :email, 'user', :barangay_id)
                             ");
                             $stmt->execute([
+                                'first_name' => $first_name,
+                                'last_name' => $last_name,
                                 'username' => $username,
                                 'password' => $hashed_password,
                                 'email' => $email,
@@ -221,8 +88,19 @@
     }
     ?>
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Roots - Register</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/register.css">
+</head>
+<body>
     <div class="register-container">
-        <h2>Register</h2>
+        <h2>Join Green Roots!</h2>
+        <p class="subtitle">Create an account to start planting for a better future.</p>
         <div class="error <?php echo $error ? 'show' : ''; ?>">
             <?php echo htmlspecialchars($error); ?>
         </div>
@@ -231,24 +109,52 @@
         </div>
         <form method="POST" action="">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+            <div class="name-group">
+                <div class="form-group">
+                    <label for="first_name">First Name</label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="first_name" name="first_name" placeholder="Enter your first name" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="last_name">Last Name</label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="last_name" name="last_name" placeholder="Enter your last name" required>
+                    </div>
+                </div>
+            </div>
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
+                <div class="input-wrapper">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="username" name="username" placeholder="Enter your username" required>
+                </div>
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" required>
+                <div class="input-wrapper">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="email" name="email" placeholder="Enter your email" required>
+                </div>
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
+                <div class="input-wrapper">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                </div>
             </div>
             <div class="form-group">
                 <label for="confirm_password">Confirm Password</label>
-                <input type="password" id="confirm_password" name="confirm_password" required>
+                <div class="input-wrapper">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm your password" required>
+                </div>
             </div>
             <div class="form-group">
-                <label for="barangay_id">Location</label>
+                <label for="barangay_id">Select Barangay</label>
                 <select id="barangay_id" name="barangay_id" required>
                     <option value="">Select Location</option>
                 </select>
@@ -257,7 +163,6 @@
         </form>
         <div class="links">
             <p>Already have an account? <a href="login.php">Login here</a></p>
-            <p><a href="../index.php">Back to Home</a></p>
         </div>
     </div>
 
@@ -362,6 +267,8 @@
 
         // Client-side validation
         document.querySelector('form').addEventListener('submit', function(e) {
+            const firstName = document.querySelector('#first_name').value;
+            const lastName = document.querySelector('#last_name').value;
             const username = document.querySelector('#username').value;
             const email = document.querySelector('#email').value;
             const password = document.querySelector('#password').value;
@@ -370,9 +277,17 @@
 
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-            if (!username || !email || !password || !confirmPassword || !barangayId) {
+            if (!firstName || !lastName || !username || !email || !password || !confirmPassword || !barangayId) {
                 e.preventDefault();
                 document.querySelector('.error').textContent = 'Please fill in all fields.';
+                document.querySelector('.error').classList.add('show');
+            } else if (firstName.length < 2) {
+                e.preventDefault();
+                document.querySelector('.error').textContent = 'First name must be at least 2 characters long.';
+                document.querySelector('.error').classList.add('show');
+            } else if (lastName.length < 2) {
+                e.preventDefault();
+                document.querySelector('.error').textContent = 'Last name must be at least 2 characters long.';
                 document.querySelector('.error').classList.add('show');
             } else if (!emailRegex.test(email)) {
                 e.preventDefault();

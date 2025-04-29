@@ -1,130 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Green Roots - Login</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Arial', sans-serif;
-        }
-
-        body {
-            background: linear-gradient(135deg, #e0e7ff, #f5f7fa);
-            color: #333;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .login-container {
-            background: #fff;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 400px;
-        }
-
-        .login-container h2 {
-            font-size: 28px;
-            color: #1e3a8a;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .login-container .error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-        }
-
-        .login-container .error.show {
-            display: block;
-        }
-
-        .login-container .form-group {
-            margin-bottom: 20px;
-        }
-
-        .login-container label {
-            display: block;
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .login-container input[type="text"],
-        .login-container input[type="password"] {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
-            font-size: 16px;
-            outline: none;
-            transition: border 0.3s;
-        }
-
-        .login-container input[type="text"]:focus,
-        .login-container input[type="password"]:focus {
-            border-color: #4f46e5;
-        }
-
-        .login-container input[type="submit"] {
-            background: #4f46e5;
-            color: #fff;
-            padding: 10px;
-            border: none;
-            border-radius: 5px;
-            width: 100%;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        .login-container input[type="submit"]:hover {
-            background: #7c3aed;
-        }
-
-        .login-container .links {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .login-container .links a {
-            color: #4f46e5;
-            text-decoration: none;
-            font-size: 14px;
-        }
-
-        .login-container .links a:hover {
-            text-decoration: underline;
-        }
-
-        /* Mobile Responsive Design */
-        @media (max-width: 768px) {
-            .login-container {
-                padding: 20px;
-                max-width: 90%;
-            }
-
-            .login-container h2 {
-                font-size: 24px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <?php
+<?php
     session_start();
     require_once '../includes/config.php';
 
@@ -157,7 +31,7 @@
                 }
 
                 // Sanitize and validate inputs
-                $username = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_STRING);
+                $username = filter_input(INPUT_POST, 'username', FILTER_SANITIZE_SPECIAL_CHARS);
                 $password = $_POST['password'];
 
                 if (empty($username) || empty($password)) {
@@ -204,8 +78,19 @@
     }
     ?>
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Roots - Login</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/login.css">
+</head>
+<body>
     <div class="login-container">
-        <h2>Login</h2>
+        <h2>Welcome Back!</h2>
+        <p class="subtitle">Join the Green Roots community and plant for a better future.</p>
         <div class="error <?php echo $error ? 'show' : ''; ?>">
             <?php echo htmlspecialchars($error); ?>
         </div>
@@ -213,17 +98,32 @@
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
+                <div class="input-wrapper">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="username" name="username" required>
+                </div>
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
+                <div class="input-wrapper">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <a href="#" title="Forgot Password functionality will be implemented later" class="forgot-password">Forgot Password?</a>
             </div>
             <input type="submit" value="Login">
+            <div class="separator">or continue with</div>
+            <div class="third-party-login">
+                <a href="#" class="google" title="Google login will be implemented later">
+                    <i class="fab fa-google"></i>
+                </a>
+                <a href="#" class="facebook" title="Facebook login will be implemented later">
+                    <i class="fab fa-facebook-f"></i>
+                </a>
+            </div>
         </form>
         <div class="links">
-            <p>Don't have an account? <a href="register.php">Register here</a></p>
-            <p><a href="../index.php">Back to Home</a></p>
+            <p>Not a member? <a href="register.php">Register now</a></p>
         </div>
     </div>
 

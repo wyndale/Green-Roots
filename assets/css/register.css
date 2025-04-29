@@ -1,0 +1,303 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Arial', sans-serif;
+}
+
+body {
+    background: #E8F5E9; /* Matching login.php background */
+    color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 16px; /* Reduced from 20px by 4px */
+}
+
+.register-container {
+    background: #fff;
+    padding: 36px; /* Reduced from 40px by 4px */
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 500px; /* Increased from 400px to 500px */
+    text-align: center;
+}
+
+.register-container h2 {
+    font-size: 25px; /* Reduced from 32px by 4px */
+    color: #4CAF50;
+    margin-bottom: 6px; /* Reduced from 10px by 4px */
+}
+
+.register-container .subtitle {
+    font-size: 14px; /* Reduced from 16px by 4px */
+    color: #666;
+    margin-bottom: 26px; /* Reduced from 30px by 4px */
+}
+
+.register-container .error {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 6px; /* Reduced from 10px by 4px */
+    border-radius: 5px;
+    margin-bottom: 21px; /* Reduced from 25px by 4px */
+    text-align: center;
+    display: none;
+}
+
+.register-container .success {
+    background: #d1fae5;
+    color: #10b981;
+    padding: 6px; /* Reduced from 10px by 4px */
+    border-radius: 5px;
+    margin-bottom: 21px; /* Reduced from 25px by 4px */
+    text-align: center;
+    display: none;
+}
+
+.register-container .error.show,
+.register-container .success.show {
+    display: block;
+}
+
+.register-container .form-group {
+    margin-bottom: 26px; /* Reduced from 30px by 4px */
+    position: relative;
+    text-align: left;
+}
+
+.register-container .name-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 17px; /* Reduced from 30px by 4px */
+}
+
+.register-container .name-group .form-group {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.register-container label {
+    display: block;
+    font-size: 13px; /* Reduced from 14px by 4px */
+    color: #666;
+    margin-bottom: 4px; /* Reduced from 8px by 4px */
+}
+
+.register-container .input-wrapper {
+    position: relative;
+}
+
+.register-container .input-wrapper i {
+    position: absolute;
+    left: 6px; /* Reduced from 10px by 4px */
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+    font-size: 12px; /* Reduced from 16px by 4px */
+}
+
+.register-container input[type="text"],
+.register-container input[type="email"],
+.register-container input[type="password"],
+.register-container select {
+    width: 100%;
+    padding: 6px 6px 6px 31px; /* Reduced from 10px to 6px, adjusted for icon */
+    border: none;
+    border-bottom: 2px solid #e0e7ff;
+    font-size: 13px; /* Reduced from 16px by 4px */
+    outline: none;
+    transition: border-bottom 0.3s;
+    background: transparent;
+}
+
+.register-container select {
+    padding: 6px; /* Reduced from 10px by 4px */
+    appearance: none;
+    background: url('data:image/svg+xml;utf8,<svg fill="%23999" height="20" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 6px center; /* Adjusted size and position */
+    background-size: 12px; /* Reduced from 16px by 4px */
+}
+
+.register-container input[type="text"]:focus,
+.register-container input[type="email"]:focus,
+.register-container input[type="password"]:focus,
+.register-container select:focus {
+    border-bottom: 2px solid #4CAF50;
+}
+
+.register-container input[type="submit"] {
+    background: #4CAF50;
+    color: #fff;
+    padding: 10px; /* Reduced from 12px by 4px */
+    border: none;
+    border-radius: 21px; /* Reduced from 25px by 4px */
+    width: 70%;
+    font-size: 14px; /* Reduced from 16px by 4px */
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.3s, box-shadow 0.3s, background 0.3s;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.register-container input[type="submit"]:hover {
+    background: #388E3C;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4);
+}
+
+.register-container .links {
+    text-align: center;
+    margin-top: 20px; /* Reduced from 15px by 4px */
+}
+
+.register-container .links p {
+    font-size: 12px; /* Reduced from 14px by 4px */
+    color: #666;
+    margin-bottom: 6px; /* Reduced from 10px by 4px */
+}
+
+.register-container .links a {
+    color: #4CAF50;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.3s;
+}
+
+.register-container .links a:hover {
+    color: #388E3C;
+}
+
+.register-container .success a {
+    color: #030a03;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.3s;
+}
+
+.register-container .success a:hover {
+    color: #388E3C;
+}
+
+/* Mobile Responsive Design */
+@media (max-width: 768px) {
+    body {
+        padding: 11px; /* Reduced from 15px by 4px */
+    }
+
+    .register-container {
+        padding: 21px; /* Reduced from 25px by 4px */
+        max-width: 90%;
+    }
+
+    .register-container h2 {
+        font-size: 22px; /* Reduced from 26px by 4px */
+        margin-bottom: 4px; /* Reduced from 8px by 4px */
+    }
+
+    .register-container .subtitle {
+        font-size: 10px; /* Reduced from 14px by 4px */
+        margin-bottom: 21px; /* Reduced from 25px by 4px */
+    }
+
+    .register-container .error,
+    .register-container .success {
+        margin-bottom: 16px; /* Reduced from 20px by 4px */
+        font-size: 9px; /* Reduced from 13px by 4px */
+        padding: 4px; /* Reduced from 8px by 4px */
+    }
+
+    .register-container .form-group,
+    .register-container .name-group {
+        margin-bottom: 21px; /* Reduced from 25px by 4px */
+    }
+
+    .register-container .name-group {
+        flex-direction: column;
+        gap: 21px; /* Reduced from 25px by 4px */
+    }
+
+    .register-container label {
+        font-size: 9px; /* Reduced from 13px by 4px */
+        margin-bottom: 2px; /* Reduced from 6px by 4px */
+    }
+
+    .register-container input[type="text"],
+    .register-container input[type="email"],
+    .register-container input[type="password"],
+    .register-container select {
+        font-size: 10px; /* Reduced from 14px by 4px */
+        padding: 4px 4px 4px 26px; /* Reduced padding, adjusted for icon */
+    }
+
+    .register-container select {
+        padding: 4px; /* Reduced from 8px by 4px */
+        background-size: 10px; /* Reduced from 14px by 4px */
+    }
+
+    .register-container .input-wrapper i {
+        font-size: 10px; /* Reduced from 14px by 4px */
+        left: 4px; /* Reduced from 8px by 4px */
+    }
+
+    .register-container input[type="submit"] {
+        font-size: 10px; /* Reduced from 14px by 4px */
+        padding: 6px; /* Reduced from 10px by 4px */
+    }
+
+    .register-container .links p,
+    .register-container .links a {
+        font-size: 9px; /* Reduced from 13px by 4px */
+    }
+}
+
+@media (max-width: 480px) {
+    .register-container {
+        padding: 16px; /* Reduced from 20px by 4px */
+    }
+
+    .register-container h2 {
+        font-size: 18px; /* Reduced from 22px by 4px */
+    }
+
+    .register-container .subtitle {
+        font-size: 9px; /* Reduced from 13px by 4px */
+    }
+
+    .register-container .error,
+    .register-container .success {
+        font-size: 8px; /* Reduced from 12px by 4px */
+    }
+
+    .register-container label {
+        font-size: 8px; /* Reduced from 12px by 4px */
+    }
+
+    .register-container input[type="text"],
+    .register-container input[type="email"],
+    .register-container input[type="password"],
+    .register-container select {
+        font-size: 9px; /* Reduced from 13px by 4px */
+        padding: 3px 3px 3px 22px; /* Reduced padding, adjusted for icon */
+    }
+
+    .register-container select {
+        padding: 3px; /* Reduced from 7px by 4px */
+        background-size: 8px; /* Reduced from 12px by 4px */
+    }
+
+    .register-container .input-wrapper i {
+        font-size: 9px; /* Reduced from 13px by 4px */
+    }
+
+    .register-container input[type="submit"] {
+        font-size: 9px; /* Reduced from 13px by 4px */
+        padding: 4px; /* Reduced from 8px by 4px */
+    }
+
+    .register-container .links p,
+    .register-container .links a {
+        font-size: 8px; /* Reduced from 12px by 4px */
+    }
+}
