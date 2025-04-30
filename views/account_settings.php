@@ -32,6 +32,17 @@ try {
     // Convert profile picture to base64 for display
     $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
     
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
+    $stmt->execute();
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
+    
     // Fetch the user's selected barangay details (if any)
     $user_barangay = null;
     if ($user['barangay_id']) {
@@ -47,6 +58,7 @@ try {
     // Handle Account Settings update
     $account_error = '';
     $account_success = '';
+    $field_errors = [];
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
         $new_username = trim($_POST['username']);
         $new_email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
@@ -55,15 +67,25 @@ try {
         $new_last_name = trim($_POST['last_name']);
 
         // Validate inputs
-        if (empty($new_username) || empty($new_email)) {
-            $account_error = 'Username and email are required.';
+        if (empty($new_username)) {
+            $field_errors['username'] = 'Username is required.';
+        }
+        if (empty($new_email)) {
+            $field_errors['email'] = 'Email is required.';
         } elseif (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-            $account_error = 'Invalid email format.';
-        } elseif (!empty($new_phone) && !preg_match('/^\+?\d{1,4}[\s-]?\d{1,15}$/', $new_phone)) {
-            $account_error = 'Invalid phone number format.';
-        } elseif (empty($new_first_name) || empty($new_last_name)) {
-            $account_error = 'First name and last name are required.';
-        } else {
+            $field_errors['email'] = 'Invalid email format.';
+        }
+        if (!empty($new_phone) && !preg_match('/^\+?\d{1,4}[\s-]?\d{1,15}$/', $new_phone)) {
+            $field_errors['phone_number'] = 'Invalid phone number format.';
+        }
+        if (empty($new_first_name)) {
+            $field_errors['first_name'] = 'First name is required.';
+        }
+        if (empty($new_last_name)) {
+            $field_errors['last_name'] = 'Last name is required.';
+        }
+
+        if (empty($field_errors)) {
             // Check if username or email is already taken by another user
             $stmt = $pdo->prepare("
                 SELECT COUNT(*) 
@@ -118,8 +140,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Account Settings - Tree Planting Initiative</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <title>Account Settings - Green Roots</title>
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -145,7 +167,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -153,35 +175,34 @@ try {
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
             position: fixed;
             top: 0;
-            left: 0;
-            height: 100vh;
-            z-index: 100;
+            bottom: 0;
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 70px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s;
+            transition: color 0.3s, transform 0.2s;
         }
 
         .sidebar a:hover {
-            color: #4f46e5;
+            color: #4CAF50;
+            transform: scale(1.1);
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px; /* Match sidebar width */
         }
 
         .header {
@@ -190,12 +211,13 @@ try {
             align-items: center;
             margin-bottom: 20px;
             width: 100%;
+            max-width: 1200px;
             position: relative;
         }
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -310,9 +332,10 @@ try {
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
-            padding: 15px 0;
+            padding: 10px;
             display: flex;
             justify-content: space-around;
+            gap: 10px;
         }
 
         .account-nav a {
@@ -320,20 +343,42 @@ try {
             text-decoration: none;
             font-size: 16px;
             padding: 10px 20px;
-            transition: color 0.3s;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            flex: 1;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .account-nav a i {
+            color: #666;
+            transition: color 0.3s ease;
         }
 
         .account-nav a.active {
-            color: #4f46e5;
-            border-bottom: 2px solid #4f46e5;
+            background: rgb(187, 235, 191);
+            color: #4CAF50;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .account-nav a.active i {
+            color: #4CAF50;
         }
 
         .account-nav a:hover {
-            color: #4f46e5;
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+        }
+
+        .account-nav a:hover i {
+            color: #4CAF50;
         }
 
         .account-section {
-            background: #fff;
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -344,8 +389,15 @@ try {
 
         .account-section h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .account-section h2 i {
+            color: #4CAF50;
         }
 
         .account-section .error {
@@ -355,7 +407,6 @@ try {
             border-radius: 5px;
             margin-bottom: 20px;
             text-align: center;
-            display: none;
             font-size: 16px;
         }
 
@@ -366,17 +417,12 @@ try {
             border-radius: 5px;
             margin-bottom: 20px;
             text-align: center;
-            display: none;
             font-size: 16px;
-        }
-
-        .account-section .error.show,
-        .account-section .success.show {
-            display: block;
         }
 
         .account-section .form-group {
             margin-bottom: 25px;
+            position: relative;
         }
 
         .account-section .form-row {
@@ -395,6 +441,13 @@ try {
             font-size: 16px;
             color: #666;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .account-section label i {
+            color: #4CAF50;
         }
 
         .account-section input[type="text"],
@@ -402,9 +455,11 @@ try {
             width: 100%;
             padding: 12px;
             border: 1px solid #e0e7ff;
-            border-radius: 5px;
+            border-radius: 8px;
             font-size: 16px;
             outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            background: #fff;
         }
 
         .account-section input[readonly] {
@@ -412,24 +467,82 @@ try {
             cursor: not-allowed;
         }
 
-        .account-section input:focus {
-            border-color: #4f46e5;
+        .account-section input[type="text"]:hover,
+        .account-section input[type="email"]:hover {
+            border-color: #4CAF50;
         }
 
-        .account-section input[type="submit"] {
-            background: #4f46e5;
+        .account-section input[type="text"]:focus,
+        .account-section input[type="email"]:focus {
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+        }
+
+        .account-section .field-error {
+            color: #dc2626;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .account-section .field-error.show {
+            display: block;
+        }
+
+        .account-section .form-group.readonly {
+            position: relative;
+        }
+
+        .account-section .form-group.readonly .tooltip {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            display: none;
+            z-index: 10;
+        }
+
+        .account-section .form-group.readonly:hover .tooltip {
+            display: block;
+        }
+
+        .account-section .button-group {
+            display: flex;
+            gap: 15px;
+        }
+
+        .account-section input[type="submit"],
+        .account-section button {
+            background: #4CAF50;
             color: #fff;
             border: none;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
             padding: 12px;
             font-size: 16px;
+            font-weight: bold;
             width: 100%;
-            border-radius: 5px;
+            border-radius: 8px;
         }
 
-        .account-section input[type="submit"]:hover {
-            background: #7c3aed;
+        .account-section input[type="submit"]:hover,
+        .account-section button:hover {
+            background: #388E3C;
+            transform: scale(1.02);
+        }
+
+        .account-section button.cancel {
+            background: #666;
+            font-weight: bold;
+        }
+
+        .account-section button.cancel:hover {
+            background: #555;
         }
 
         .error-message {
@@ -456,9 +569,8 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
-                bottom: 0;
                 top: auto;
-                height: auto;
+                bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
@@ -469,8 +581,8 @@ try {
             }
 
             .sidebar a {
-                margin: 0 15px;
-                font-size: 20px;
+                margin: 0 10px;
+                font-size: 18px;
             }
 
             .main-content {
@@ -524,21 +636,17 @@ try {
 
             .account-nav {
                 flex-direction: column;
-                padding: 10px;
+                padding: 5px;
+                gap: 5px;
             }
 
             .account-nav a {
-                padding: 10px;
+                padding: 8px 10px;
                 font-size: 14px;
-                border-bottom: 1px solid #e0e7ff;
             }
 
-            .account-nav a:last-child {
-                border-bottom: none;
-            }
-
-            .account-nav a.active {
-                border-bottom: 2px solid #4f46e5;
+            .account-nav a i {
+                font-size: 14px;
             }
 
             .account-section {
@@ -559,7 +667,17 @@ try {
                 font-size: 14px;
             }
 
-            .account-section input[type="submit"] {
+            .account-section .field-error {
+                font-size: 10px;
+            }
+
+            .account-section .form-group.readonly .tooltip {
+                font-size: 10px;
+                top: -25px;
+            }
+
+            .account-section input[type="submit"],
+            .account-section button {
                 padding: 10px;
                 font-size: 14px;
             }
@@ -567,6 +685,11 @@ try {
             .account-section .form-row {
                 flex-direction: column;
                 gap: 15px;
+            }
+
+            .account-section .button-group {
+                flex-direction: column;
+                gap: 10px;
             }
 
             .error-message {
@@ -578,15 +701,15 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
             <a href="history.php" title="History"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -609,67 +732,91 @@ try {
                 </div>
             </div>
             <div class="account-nav">
-                <a href="account_settings.php" class="active">Account Settings</a>
-                <a href="profile.php">Profile</a>
-                <a href="password_security.php">Password & Security</a>
-                <a href="payment_methods.php">Payment Methods</a>
+                <a href="account_settings.php" class="active"><i class="fas fa-user-cog"></i> Account Settings</a>
+                <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                <a href="password_security.php"><i class="fas fa-lock"></i> Password & Security</a>
+                <a href="payment_methods.php"><i class="fas fa-credit-card"></i> Payment Methods</a>
             </div>
             <div class="account-section">
+                <h2><i class="fas fa-user-cog"></i> Account Settings</h2>
                 <?php if ($account_error): ?>
-                    <div class="error show"><?php echo htmlspecialchars($account_error); ?></div>
+                    <div class="error"><?php echo htmlspecialchars($account_error); ?></div>
                 <?php endif; ?>
                 <?php if ($account_success): ?>
-                    <div class="success show"><?php echo htmlspecialchars($account_success); ?></div>
+                    <div class="success"><?php echo htmlspecialchars($account_success); ?></div>
                 <?php endif; ?>
                 <form method="POST" action="">
                     <input type="hidden" name="update_account" value="1">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="first_name">First Name</label>
+                            <label for="first_name"><i class="fas fa-user"></i> First Name</label>
                             <input type="text" id="first_name" name="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>" required>
+                            <?php if (isset($field_errors['first_name'])): ?>
+                                <div class="field-error show"><?php echo htmlspecialchars($field_errors['first_name']); ?></div>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
-                            <label for="last_name">Last Name</label>
+                            <label for="last_name"><i class="fas fa-user"></i> Last Name</label>
                             <input type="text" id="last_name" name="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>" required>
+                            <?php if (isset($field_errors['last_name'])): ?>
+                                <div class="field-error show"><?php echo htmlspecialchars($field_errors['last_name']); ?></div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="username">Username</label>
+                        <label for="username"><i class="fas fa-at"></i> Username</label>
                         <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($user['username']); ?>" required>
+                        <?php if (isset($field_errors['username'])): ?>
+                            <div class="field-error show"><?php echo htmlspecialchars($field_errors['username']); ?></div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-group">
-                        <label for="email">Email</label>
+                        <label for="email"><i class="fas fa-envelope"></i> Email</label>
                         <input type="email" id="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" required>
+                        <?php if (isset($field_errors['email'])): ?>
+                            <div class="field-error show"><?php echo htmlspecialchars($field_errors['email']); ?></div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-group">
-                        <label for="phone_number">Phone Number (Optional)</label>
+                        <label for="phone_number"><i class="fas fa-phone"></i> Phone Number (Optional)</label>
                         <input type="text" id="phone_number" name="phone_number" value="<?php echo htmlspecialchars($user['phone_number'] ?? ''); ?>">
+                        <?php if (isset($field_errors['phone_number'])): ?>
+                            <div class="field-error show"><?php echo htmlspecialchars($field_errors['phone_number']); ?></div>
+                        <?php endif; ?>
                     </div>
-                    <div class="form-group">
-                        <label for="barangay">Barangay</label>
+                    <div class="form-group readonly">
+                        <label for="barangay"><i class="fas fa-map-pin"></i> Barangay</label>
                         <input type="text" id="barangay" value="<?php echo htmlspecialchars($user_barangay['name'] ?? 'Not specified'); ?>" readonly>
+                        <span class="tooltip">This field is set during registration</span>
                     </div>
                     <div class="form-row">
-                        <div class="form-group">
-                            <label for="city">City</label>
+                        <div class="form-group readonly">
+                            <label for="city"><i class="fas fa-city"></i> City</label>
                             <input type="text" id="city" value="<?php echo htmlspecialchars($user['city'] ?? ($user_barangay['city'] ?? 'Not specified')); ?>" readonly>
+                            <span class="tooltip">This field is set during registration</span>
                         </div>
-                        <div class="form-group">
-                            <label for="province">Province</label>
+                        <div class="form-group readonly">
+                            <label for="province"><i class="fas fa-map"></i> Province</label>
                             <input type="text" id="province" value="<?php echo htmlspecialchars($user['province'] ?? ($user_barangay['province'] ?? 'Not specified')); ?>" readonly>
+                            <span class="tooltip">This field is set during registration</span>
                         </div>
                     </div>
                     <div class="form-row">
-                        <div class="form-group">
-                            <label for="region">Region</label>
+                        <div class="form-group readonly">
+                            <label for="region"><i class="fas fa-globe"></i> Region</label>
                             <input type="text" id="region" value="<?php echo htmlspecialchars($user['region'] ?? ($user_barangay['region'] ?? 'Not specified')); ?>" readonly>
+                            <span class="tooltip">This field is set during registration</span>
                         </div>
-                        <div class="form-group">
-                            <label for="country">Country</label>
+                        <div class="form-group readonly">
+                            <label for="country"><i class="fas fa-flag"></i> Country</label>
                             <input type="text" id="country" value="<?php echo htmlspecialchars($user['country'] ?? ($user_barangay['country'] ?? 'Not specified')); ?>" readonly>
+                            <span class="tooltip">This field is set during registration</span>
                         </div>
                     </div>
-                    <input type="submit" value="Update Account Settings">
+                    <div class="button-group">
+                        <input type="submit" value="Update Account Settings">
+                        <button type="button" class="cancel" onclick="window.location.reload()">Cancel</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -680,6 +827,7 @@ try {
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },

@@ -35,7 +35,35 @@ try {
     }
 
     $eco_points = $user['eco_points'];
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+
+    // Convert profile picture to base64 for display
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
+
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
+    $stmt->execute();
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Fetch available vouchers
     $stmt = $pdo->prepare("SELECT voucher_id, name, points_cost, code FROM vouchers ORDER BY points_cost ASC");
@@ -128,8 +156,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rewards - Tree Planting Initiative</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <title>Rewards - Green Roots</title>
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -155,7 +183,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -163,18 +191,16 @@ try {
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
             position: fixed;
             top: 0;
-            left: 0;
-            height: 100vh;
-            z-index: 100;
+            bottom: 0;
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 70px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
@@ -182,16 +208,16 @@ try {
         }
 
         .sidebar a:hover {
-            color: #4f46e5;
+            color: #4CAF50;
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px;
         }
 
         .header {
@@ -200,12 +226,13 @@ try {
             align-items: center;
             margin-bottom: 20px;
             width: 100%;
+            max-width: 1200px;
             position: relative;
         }
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -314,12 +341,12 @@ try {
         }
 
         .rewards-section {
-            background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             margin-bottom: 30px;
             display: flex;
             flex-direction: column;
@@ -328,28 +355,40 @@ try {
 
         .rewards-section h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .eco-points {
-            background: #fff;
-            padding: 15px;
-            border-radius: 10px;
-            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
+            background: rgb(187, 235, 191);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             text-align: center;
-            font-size: 20px;
-            color: #1e3a8a;
+            font-size: 24px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .eco-points i {
+            color: #4CAF50;
+            font-size: 28px;
         }
 
         .eco-points span {
             font-weight: bold;
-            color: #10b981;
+            color: #4CAF50;
         }
 
         .redeem-options {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
         }
 
@@ -357,13 +396,25 @@ try {
             background: #fff;
             padding: 20px;
             border-radius: 15px;
-            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .redeem-option:hover {
+            transform: translateY(-5px);
         }
 
         .redeem-option h3 {
             font-size: 22px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .redeem-option h3 i {
+            color: #4CAF50;
         }
 
         .voucher-list {
@@ -377,9 +428,14 @@ try {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px;
+            padding: 12px;
             border: 1px solid #e0e7ff;
-            border-radius: 5px;
+            border-radius: 8px;
+            transition: background 0.3s ease;
+        }
+
+        .voucher-item:hover {
+            background: rgba(76, 175, 80, 0.1);
         }
 
         .voucher-item span {
@@ -387,31 +443,108 @@ try {
         }
 
         .voucher-item span.points {
-            color: #f59e0b;
+            color: #388E3C;
             font-weight: bold;
         }
 
-        .redeem-option select {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
+        .redeem-option p {
             font-size: 14px;
+            color: #666;
             margin-bottom: 10px;
         }
 
+        .redeem-option select,
         .redeem-option input[type="email"],
         .redeem-option input[type="number"] {
             width: 100%;
-            padding: 8px;
+            padding: 10px;
             border: 1px solid #e0e7ff;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 16px;
             margin-bottom: 10px;
+            outline: none;
         }
 
         .redeem-option button {
-            background: #4f46e5;
+            background: #4CAF50;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            width: 100%;
+        }
+
+        .redeem-option button:hover {
+            background: #388E3C;
+        }
+
+        .error-message,
+        .redeem-error {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 15px;
+            text-align: center;
+            font-size: 16px;
+            width: 100%;
+            max-width: 800px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #fff;
+            padding: 30px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            text-align: center;
+        }
+
+        .modal-content .redeem-message {
+            font-size: 16px;
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+
+        .modal-content .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .modal-content .close-btn:hover {
+            color: #dc2626;
+        }
+
+        .modal-content button {
+            background: #4CAF50;
             color: #fff;
             border: none;
             padding: 10px 20px;
@@ -421,39 +554,8 @@ try {
             transition: background 0.3s;
         }
 
-        .redeem-option button:hover {
-            background: #7c3aed;
-        }
-
-        .redeem-message {
-            background: #d1fae5;
-            color: #10b981;
-            padding: 12px;
-            border-radius: 5px;
-            text-align: center;
-            font-size: 16px;
-        }
-
-        .redeem-error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 5px;
-            text-align: center;
-            font-size: 16px;
-        }
-
-        .error-message {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-            width: 100%;
-            max-width: 800px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        .modal-content button:hover {
+            background: #388E3C;
         }
 
         /* Mobile Responsive Design */
@@ -467,9 +569,8 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
-                bottom: 0;
                 top: auto;
-                height: auto;
+                bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
@@ -480,8 +581,8 @@ try {
             }
 
             .sidebar a {
-                margin: 0 15px;
-                font-size: 20px;
+                margin: 0 10px;
+                font-size: 18px;
             }
 
             .main-content {
@@ -542,7 +643,15 @@ try {
             }
 
             .eco-points {
-                font-size: 18px;
+                font-size: 20px;
+            }
+
+            .eco-points i {
+                font-size: 24px;
+            }
+
+            .redeem-options {
+                grid-template-columns: 1fr;
             }
 
             .redeem-option {
@@ -560,7 +669,8 @@ try {
             .redeem-option select,
             .redeem-option input[type="email"],
             .redeem-option input[type="number"] {
-                font-size: 13px;
+                font-size: 14px;
+                padding: 8px;
             }
 
             .redeem-option button {
@@ -568,12 +678,22 @@ try {
                 padding: 8px 15px;
             }
 
-            .redeem-message,
-            .redeem-error {
+            .modal-content {
+                width: 95%;
+                padding: 20px;
+            }
+
+            .modal-content .redeem-message {
                 font-size: 14px;
             }
 
-            .error-message {
+            .modal-content button {
+                font-size: 14px;
+                padding: 8px 15px;
+            }
+
+            .error-message,
+            .redeem-error {
                 font-size: 14px;
             }
         }
@@ -582,22 +702,19 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
             <a href="history.php" title="History"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
-            <?php endif; ?>
-            <?php if ($redeem_message): ?>
-                <div class="redeem-message"><?php echo htmlspecialchars($redeem_message); ?></div>
             <?php endif; ?>
             <?php if ($redeem_error): ?>
                 <div class="redeem-error"><?php echo htmlspecialchars($redeem_error); ?></div>
@@ -621,12 +738,13 @@ try {
             <div class="rewards-section">
                 <h2>Redeem Your Rewards</h2>
                 <div class="eco-points">
+                    <i class="fas fa-leaf"></i>
                     Your Eco Points: <span><?php echo $eco_points; ?></span>
                 </div>
                 <div class="redeem-options">
                     <!-- Voucher Redemption -->
                     <div class="redeem-option">
-                        <h3>Exchange for Vouchers</h3>
+                        <h3><i class="fas fa-ticket-alt"></i> Exchange for Vouchers</h3>
                         <div class="voucher-list">
                             <?php foreach ($vouchers as $voucher): ?>
                                 <div class="voucher-item">
@@ -640,7 +758,7 @@ try {
                                 <option value="">Select a voucher</option>
                                 <?php foreach ($vouchers as $voucher): ?>
                                     <option value="<?php echo $voucher['voucher_id']; ?>">
-                                        <?php echo htmlspecialchars($voucher['name']) . " (" . $voucher['points_cost'] . " points)"; ?>
+                                        <?php echo htmlspecialchars($voucher['name']) . " - " . $voucher['points_cost'] . " points"; ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -649,7 +767,7 @@ try {
                     </div>
                     <!-- Cash Withdrawal -->
                     <div class="redeem-option">
-                        <h3>Withdraw as Cash via PayPal</h3>
+                        <h3><i class="fas fa-wallet"></i> Withdraw as Cash via PayPal</h3>
                         <p>Conversion Rate: 100 Eco Points = 1 USD</p>
                         <form method="POST" action="">
                             <input type="email" name="paypal_email" placeholder="Enter your PayPal email" required>
@@ -659,6 +777,16 @@ try {
                     </div>
                 </div>
             </div>
+            <!-- Modal for Success Message -->
+            <?php if ($redeem_message): ?>
+                <div class="modal active" id="redeemModal">
+                    <div class="modal-content">
+                        <span class="close-btn" onclick="closeModal('redeemModal')">×</span>
+                        <div class="redeem-message"><?php echo htmlspecialchars($redeem_message); ?></div>
+                        <button onclick="closeModal('redeemModal')">Close</button>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -667,6 +795,7 @@ try {
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
@@ -717,6 +846,17 @@ try {
         document.addEventListener('click', function(e) {
             if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
                 profileDropdown.classList.remove('active');
+            }
+        });
+
+        // Modal functionality
+        function closeModal(modalId) {
+            document.querySelector(`#${modalId}`).classList.remove('active');
+        }
+
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
             }
         });
     </script>

@@ -1,7 +1,16 @@
 <?php
-// Start session and handle PHP logic
 session_start();
 require_once '../includes/config.php';
+
+// Session timeout (30 minutes)
+$timeout_duration = 1800;
+if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout_duration) {
+    session_unset();
+    session_destroy();
+    header('Location: login.php?timeout=1');
+    exit;
+}
+$_SESSION['last_activity'] = time();
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -12,13 +21,22 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
-// Fetch user data
-try {
+// Function to fetch planting site for a barangay
+function getPlantingSite($pdo, $barangay_id) {
     $stmt = $pdo->prepare("
-        SELECT user_id, username, email, profile_picture, paypal_email 
-        FROM users 
-        WHERE user_id = :user_id
+        SELECT planting_site_id, latitude, longitude 
+        FROM planting_sites 
+        WHERE barangay_id = :barangay_id 
+        ORDER BY updated_at DESC 
+        LIMIT 1
     ");
+    $stmt->execute(['barangay_id' => $barangay_id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+try {
+    // Fetch user data
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -28,8 +46,31 @@ try {
         exit;
     }
 
-    // Convert profile picture to base64 for display
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+    $barangay_id = $user['barangay_id'];
+
+    // Ensure only regular users can access this page
+    if ($user['role'] !== 'user') {
+        header('Location: ' . ($user['role'] === 'admin' ? 'admin_dashboard.php' : 'validator_dashboard.php'));
+        exit;
+    }
+
+    // Fetch profile picture
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
 
     // Fetch favicon and logo
     $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
@@ -42,41 +83,16 @@ try {
     $logo_data = $stmt->fetchColumn();
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
-    // Handle PayPal Email Update
-    $payment_error = '';
-    $payment_success = '';
-    $field_errors = [];
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_payment'])) {
-        $paypal_email = trim($_POST['paypal_email']);
+    // Fetch planting site
+    $planting_site = getPlantingSite($pdo, $barangay_id);
 
-        // Validate PayPal email
-        if (empty($paypal_email)) {
-            $field_errors['paypal_email'] = 'PayPal email is required.';
-        } elseif (!filter_var($paypal_email, FILTER_VALIDATE_EMAIL)) {
-            $field_errors['paypal_email'] = 'Please enter a valid email address for PayPal.';
-        } else {
-            // Update the database
-            $stmt = $pdo->prepare("UPDATE users SET paypal_email = :paypal_email WHERE user_id = :user_id");
-            $stmt->execute([
-                'paypal_email' => $paypal_email,
-                'user_id' => $user_id
-            ]);
-
-            $user['paypal_email'] = $paypal_email;
-            $payment_success = 'Payment method updated successfully!';
-        }
-    }
-
-    // Handle PayPal Email Removal
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_payment'])) {
-        $stmt = $pdo->prepare("UPDATE users SET paypal_email = NULL WHERE user_id = :user_id");
-        $stmt->execute(['user_id' => $user_id]);
-        $user['paypal_email'] = NULL;
-        $payment_success = 'Payment method removed successfully!';
+    if (!$planting_site) {
+        $error_message = 'No planting site designated for your barangay. Please contact an admin.';
     }
 
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
+    error_log("Database error in planting_site.php: " . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -84,7 +100,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Methods - Green Roots</title>
+    <title>Designated Planting Site - Green Roots</title>
     <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -98,7 +114,6 @@ try {
         body {
             background: #f5f7fa;
             color: #333;
-            overflow-x: hidden;
         }
 
         .container {
@@ -120,6 +135,7 @@ try {
             position: fixed;
             top: 0;
             bottom: 0;
+            overflow-y: auto;
         }
 
         .sidebar img.logo {
@@ -132,30 +148,28 @@ try {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s, transform 0.2s;
+            transition: color 0.3s;
         }
 
         .sidebar a:hover {
             color: #4CAF50;
-            transform: scale(1.1);
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
-            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
+            margin-left: 80px;
         }
 
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 40px;
             width: 100%;
-            max-width: 1200px;
             position: relative;
         }
 
@@ -269,82 +283,23 @@ try {
             background: #e0e7ff;
         }
 
-        .account-nav {
-            width: 100%;
-            max-width: 800px;
+        .planting-site-container {
             background: #fff;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
-            padding: 10px;
-            display: flex;
-            justify-content: space-around;
-            gap: 10px;
-        }
-
-        .account-nav a {
-            color: #666;
-            text-decoration: none;
-            font-size: 16px;
-            padding: 10px 20px;
-            border-radius: 10px;
-            transition: all 0.3s ease;
-            flex: 1;
-            text-align: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .account-nav a i {
-            color: #666;
-            transition: color 0.3s ease;
-        }
-
-        .account-nav a.active {
-            background: rgb(187, 235, 191);
-            color: #4CAF50;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        }
-
-        .account-nav a.active i {
-            color: #4CAF50;
-        }
-
-        .account-nav a:hover {
-            background: rgba(76, 175, 80, 0.1);
-            color: #4CAF50;
-        }
-
-        .account-nav a:hover i {
-            color: #4CAF50;
-        }
-
-        .account-section {
-            background: #E8F5E9;
-            padding: 30px;
+            padding: 60px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 800px;
-            margin-bottom: 30px;
+            max-width: 600px;
+            text-align: center;
         }
 
-        .account-section h2 {
+        .planting-site-container h2 {
             font-size: 28px;
             color: #4CAF50;
             margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
 
-        .account-section h2 i {
-            color: #4CAF50;
-        }
-
-        .account-section .error {
+        .planting-site-container .error {
             background: #fee2e2;
             color: #dc2626;
             padding: 12px;
@@ -354,146 +309,27 @@ try {
             font-size: 16px;
         }
 
-        .account-section .success {
-            background: #d1fae5;
-            color: #10b981;
-            padding: 12px;
+        .planting-site-details {
+            background: #E8F5E9;
+            padding: 25px;
             border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-        }
-
-        .account-section .current-method {
-            margin-bottom: 25px;
-            padding: 15px;
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: transform 0.2s;
-        }
-
-        .account-section .current-method:hover {
-            transform: scale(1.01);
-        }
-
-        .account-section .current-method p {
-            margin: 0;
             font-size: 16px;
             color: #666;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
 
-        .account-section .current-method p i {
+        .planting-site-details a {
             color: #4CAF50;
-        }
-
-        .account-section .current-method .not-set i {
-            color: #dc2626;
-        }
-
-        .account-section .form-group {
-            margin-bottom: 25px;
-            position: relative;
-        }
-
-        .account-section label {
-            display: block;
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .account-section label i {
-            color: #4CAF50;
-        }
-
-        .account-section input[type="email"] {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #e0e7ff;
-            border-radius: 8px;
-            font-size: 16px;
-            outline: none;
-            transition: border-color 0.3s, box-shadow 0.3s;
-            background: #fff;
-        }
-
-        .account-section input[type="email"]:hover {
-            border-color: #4CAF50;
-        }
-
-        .account-section input[type="email"]:focus {
-            border-color: #4CAF50;
-            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
-        }
-
-        .account-section .field-error {
-            color: #dc2626;
-            font-size: 12px;
-            margin-top: 5px;
-            display: none;
-        }
-
-        .account-section .field-error.show {
-            display: block;
-        }
-
-        .account-section .button-group {
-            display: flex;
-            gap: 15px;
-        }
-
-        .account-section input[type="submit"],
-        .account-section button {
-            background: #4CAF50;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            transition: background 0.3s, transform 0.1s;
-            padding: 12px;
-            font-size: 16px;
             font-weight: bold;
-            width: 100%;
-            border-radius: 8px;
-        }
-
-        .account-section input[type="submit"]:hover,
-        .account-section button:hover {
-            background: #388E3C;
-            transform: scale(1.02);
-        }
-
-        .account-section button.cancel {
-            background: #666;
-        }
-
-        .account-section button.cancel:hover {
-            background: #555;
-        }
-
-        .account-section .remove-btn {
-            background: #dc2626;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            transition: background 0.3s, transform 0.1s;
-            padding: 8px 16px;
-            font-size: 14px;
+            text-decoration: none;
+            padding: 15px 10px;
             border-radius: 5px;
+            transition: transform 0.2s ease, background-color 0.3s ease;
+            display: inline-block;
         }
 
-        .account-section .remove-btn:hover {
-            background: #b91c1c;
-            transform: scale(1.02);
+        .planting-site-details a:hover {
+            transform: scale(1.05);
+            background-color: rgba(76, 175, 80, 0.1); 
         }
 
         .error-message {
@@ -505,7 +341,7 @@ try {
             text-align: center;
             font-size: 16px;
             width: 100%;
-            max-width: 800px;
+            max-width: 600px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
@@ -585,66 +421,20 @@ try {
                 right: 0;
             }
 
-            .account-nav {
-                flex-direction: column;
-                padding: 5px;
-                gap: 5px;
-            }
-
-            .account-nav a {
-                padding: 8px 10px;
-                font-size: 14px;
-            }
-
-            .account-nav a i {
-                font-size: 14px;
-            }
-
-            .account-section {
+            .planting-site-container {
                 padding: 20px;
             }
 
-            .account-section h2 {
+            .planting-site-container h2 {
                 font-size: 24px;
             }
 
-            .account-section .current-method {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-            }
-
-            .account-section .current-method p {
+            .planting-site-details {
                 font-size: 14px;
             }
 
-            .account-section label {
-                font-size: 14px;
-            }
-
-            .account-section input[type="email"] {
-                padding: 10px;
-                font-size: 14px;
-            }
-
-            .account-section .field-error {
-                font-size: 10px;
-            }
-
-            .account-section input[type="submit"],
-            .account-section button {
-                padding: 10px;
-                font-size: 14px;
-            }
-
-            .account-section .button-group {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .account-section .remove-btn {
-                padding: 6px 12px;
-                font-size: 12px;
+            .planting-site-details a {
+                padding: 3px 6px;
             }
 
             .error-message {
@@ -667,11 +457,8 @@ try {
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
         </div>
         <div class="main-content">
-            <?php if (isset($error_message)): ?>
-                <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
-            <?php endif; ?>
             <div class="header">
-                <h1>Payment Methods</h1>
+                <h1>Designated Planting Site</h1>
                 <div class="search-bar">
                     <input type="text" placeholder="Search functionalities..." id="searchInput">
                     <div class="search-results" id="searchResults"></div>
@@ -686,44 +473,21 @@ try {
                     </div>
                 </div>
             </div>
-            <div class="account-nav">
-                <a href="account_settings.php"><i class="fas fa-user-cog"></i> Account Settings</a>
-                <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
-                <a href="password_security.php"><i class="fas fa-lock"></i> Password & Security</a>
-                <a href="payment_methods.php" class="active"><i class="fas fa-credit-card"></i> Payment Methods</a>
-            </div>
-            <div class="account-section">
-                <h2><i class="fas fa-credit-card"></i> Payment Methods</h2>
-                <?php if ($payment_success): ?>
-                    <div class="success"><?php echo htmlspecialchars($payment_success); ?></div>
+            <div class="planting-site-container">
+                <h2>Your Designated Planting Site</h2>
+                <?php if (isset($error_message)): ?>
+                    <div class="error"><?php echo htmlspecialchars($error_message); ?></div>
+                <?php elseif ($planting_site): ?>
+                    <div class="planting-site-details">
+                        <p><strong>Latitude:</strong> <?php echo htmlspecialchars($planting_site['latitude']); ?></p>
+                        <p><strong>Longitude:</strong> <?php echo htmlspecialchars($planting_site['longitude']); ?></p>
+                        <p>
+                            <a href="https://www.openstreetmap.org/?mlat=<?php echo htmlspecialchars($planting_site['latitude']); ?>&mlon=<?php echo htmlspecialchars($planting_site['longitude']); ?>#map=15/<?php echo htmlspecialchars($planting_site['latitude']); ?>/<?php echo htmlspecialchars($planting_site['longitude']); ?>" target="_blank">
+                                View on Open Street Map
+                            </a>
+                        </p>
+                    </div>
                 <?php endif; ?>
-                <div class="current-method">
-                    <p class="<?php echo $user['paypal_email'] ? '' : 'not-set'; ?>">
-                        <i class="fab fa-paypal"></i>
-                        <strong>PayPal Email:</strong> 
-                        <?php echo $user['paypal_email'] ? htmlspecialchars($user['paypal_email']) : 'Not set'; ?>
-                    </p>
-                    <?php if ($user['paypal_email']): ?>
-                        <form method="POST" action="" style="display: inline;">
-                            <input type="hidden" name="remove_payment" value="1">
-                            <button type="submit" class="remove-btn">Remove</button>
-                        </form>
-                    <?php endif; ?>
-                </div>
-                <form method="POST" action="">
-                    <input type="hidden" name="update_payment" value="1">
-                    <div class="form-group">
-                        <label for="paypal_email"><i class="fab fa-paypal"></i> PayPal Email</label>
-                        <input type="email" id="paypal_email" name="paypal_email" value="<?php echo htmlspecialchars($user['paypal_email'] ?? ''); ?>" placeholder="Enter your PayPal email" required>
-                        <?php if (isset($field_errors['paypal_email'])): ?>
-                            <div class="field-error show"><?php echo htmlspecialchars($field_errors['paypal_email']); ?></div>
-                        <?php endif; ?>
-                    </div>
-                    <div class="button-group">
-                        <input type="submit" value="Update Payment Method">
-                        <button type="button" class="cancel" onclick="window.location.reload()">Cancel</button>
-                    </div>
-                </form>
             </div>
         </div>
     </div>

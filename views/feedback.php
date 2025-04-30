@@ -41,7 +41,33 @@ try {
     }
 
     // Convert profile picture to base64 for display
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
+
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
+    $stmt->execute();
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Handle Feedback Submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && $active_tab === 'submit') {
@@ -93,7 +119,7 @@ try {
                 ");
                 $stmt->execute(['user_id' => $user_id]);
 
-                $feedback_success = 'Feedback submitted successfully! Thank you for your input.';
+                $feedback_success = 'Thanks you! Your feedback was submitted successfully—we appreciate it.';
             }
         }
     }
@@ -128,8 +154,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Feedback - Tree Planting Initiative</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <title>Feedback - Green Roots</title>
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -155,7 +181,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -163,18 +189,16 @@ try {
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
             position: fixed;
             top: 0;
-            left: 0;
-            height: 100vh;
-            z-index: 100;
+            bottom: 0;
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 70px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
@@ -182,16 +206,16 @@ try {
         }
 
         .sidebar a:hover {
-            color: #4f46e5;
+            color: #4CAF50;
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px;
         }
 
         .header {
@@ -200,12 +224,13 @@ try {
             align-items: center;
             margin-bottom: 20px;
             width: 100%;
+            max-width: 1200px;
             position: relative;
         }
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -315,14 +340,15 @@ try {
 
         .feedback-nav {
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             background: #fff;
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
-            padding: 15px 0;
+            padding: 10px;
             display: flex;
-            justify-content: space-around;
+            justify-content: center;
+            gap: 10px;
         }
 
         .feedback-nav a {
@@ -330,64 +356,67 @@ try {
             text-decoration: none;
             font-size: 16px;
             padding: 10px 20px;
-            transition: color 0.3s, background 0.3s;
             border-radius: 10px;
+            transition: all 0.3s ease;
+            flex: 1;
+            text-align: center;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .feedback-nav a i {
+            color: #666;
+            transition: color 0.3s ease;
         }
 
         .feedback-nav a.active {
-            color: #fff;
-            background: #4f46e5;
+            background: rgb(187, 235, 191);
+            color: #4CAF50;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .feedback-nav a.active i {
+            color: #4CAF50;
         }
 
         .feedback-nav a:hover {
-            color: #4f46e5;
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+        }
+
+        .feedback-nav a:hover i {
+            color: #4CAF50;
         }
 
         .feedback-section {
-            background: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             margin-bottom: 30px;
         }
 
         .feedback-section h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .feedback-section .error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-            font-size: 16px;
-        }
-
-        .feedback-section .success {
-            background: #d1fae5;
-            color: #10b981;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-            font-size: 16px;
-        }
-
-        .feedback-section .error.show,
-        .feedback-section .success.show {
-            display: block;
+        .feedback-section h2 i {
+            color: #4CAF50;
         }
 
         .form-group {
             margin-bottom: 20px;
+            position: relative;
         }
 
         .form-group label {
@@ -395,16 +424,36 @@ try {
             font-size: 16px;
             color: #666;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .form-group label i {
+            color: #4CAF50;
         }
 
         .form-group select,
         .form-group textarea {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             border: 1px solid #e0e7ff;
-            border-radius: 5px;
+            border-radius: 8px;
             font-size: 16px;
             outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            background: #fff;
+        }
+
+        .form-group select:hover,
+        .form-group textarea:hover {
+            border-color: #4CAF50;
+        }
+
+        .form-group select:focus,
+        .form-group textarea:focus {
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
         }
 
         .form-group textarea {
@@ -412,26 +461,44 @@ try {
             resize: vertical;
         }
 
-        .form-group select:focus,
-        .form-group textarea:focus {
-            border-color: #4f46e5;
+        .form-group .char-counter {
+            position: absolute;
+            bottom: -20px;
+            right: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .form-group .char-counter.warning {
+            color: #dc2626;
         }
 
         .rating-group {
             display: flex;
+            align-items: center;
             gap: 10px;
             margin-bottom: 20px;
+            position: relative;
         }
 
         .rating-group label {
             font-size: 16px;
             color: #666;
-            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .rating-group label i {
+            color: #4CAF50;
         }
 
         .rating-group .stars {
             display: flex;
             gap: 5px;
+            background: rgb(187, 235, 191);
+            padding: 5px 10px;
+            border-radius: 8px;
         }
 
         .rating-group .stars input {
@@ -443,38 +510,83 @@ try {
             color: #ccc;
             cursor: pointer;
             transition: color 0.3s;
+            margin-bottom: 0;
         }
 
-        .rating-group .stars input:checked ~ label,
         .rating-group .stars label:hover,
-        .rating-group .stars label:hover ~ label {
+        .rating-group .stars label:hover ~ label,
+        .rating-group .stars input:checked ~ label {
             color: #f59e0b;
+        }
+
+        .rating-group .tooltip {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            display: none;
+            z-index: 10;
+        }
+
+        .rating-group:hover .tooltip {
+            display: block;
         }
 
         .form-group.checkbox {
             display: flex;
             align-items: center;
             gap: 10px;
+            position: relative;
         }
 
         .form-group.checkbox input {
             width: auto;
+            cursor: pointer;
+        }
+
+        .form-group.checkbox label {
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+
+        .form-group.checkbox .tooltip {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            display: none;
+            z-index: 10;
+        }
+
+        .form-group.checkbox:hover .tooltip {
+            display: block;
         }
 
         .feedback-section input[type="submit"] {
-            background: #4f46e5;
+            background: #4CAF50;
             color: #fff;
             border: none;
             padding: 12px;
-            border-radius: 5px;
+            border-radius: 8px;
             font-size: 16px;
             width: 100%;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
         }
 
         .feedback-section input[type="submit"]:hover {
-            background: #7c3aed;
+            background: #388E3C;
+            transform: scale(1.02);
         }
 
         .history-section {
@@ -488,7 +600,7 @@ try {
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px;
             padding-right: 10px;
         }
 
@@ -502,48 +614,98 @@ try {
         }
 
         .history-list::-webkit-scrollbar-thumb {
-            background: #4f46e5;
+            background: #4CAF50;
             border-radius: 10px;
         }
 
         .history-list::-webkit-scrollbar-thumb:hover {
-            background: #7c3aed;
+            background: #388E3C;
         }
 
         .feedback-card {
             background: #fff;
             padding: 15px;
             border-radius: 15px;
-            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .feedback-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .feedback-card-header {
             display: flex;
-            flex-direction: column;
-            gap: 5px;
-            min-height: 120px;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
         }
 
-        .feedback-card p {
+        .feedback-card-header p {
             font-size: 14px;
-            color: #333;
-            margin: 2px 0;
+            color: #666;
         }
 
-        .feedback-card p strong {
-            color: #1e3a8a;
+        .feedback-card-header .status {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
         }
 
         .status-submitted {
+            background: #fef3c7;
             color: #f59e0b;
-            font-weight: bold;
         }
 
         .status-under_review {
+            background: #dbeafe;
             color: #3b82f6;
-            font-weight: bold;
         }
 
         .status-resolved {
+            background: #d1fae5;
             color: #10b981;
-            font-weight: bold;
+        }
+
+        .feedback-card-content {
+            max-height: 100px;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .feedback-card-content.expanded {
+            max-height: 500px;
+        }
+
+        .feedback-card-content p {
+            font-size: 14px;
+            color: #333;
+            margin: 5px 0;
+        }
+
+        .feedback-card-content p strong {
+            color: #4CAF50;
+        }
+
+        .feedback-card-content .rating {
+            color: #f59e0b;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            color: #4CAF50;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 5px;
+            text-align: left;
+            transition: color 0.3s;
+        }
+
+        .toggle-btn:hover {
+            color: #388E3C;
         }
 
         .no-data {
@@ -564,15 +726,17 @@ try {
         .pagination a {
             padding: 8px 12px;
             background: #fff;
-            color: #4f46e5;
+            color: #4CAF50;
             text-decoration: none;
-            border-radius: 5px;
+            border-radius: 25px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-            transition: background 0.3s;
+            transition: all 0.3s ease;
+            min-width: 40px;
+            text-align: center;
         }
 
         .pagination a:hover {
-            background: #e0e7ff;
+            background: rgba(76, 175, 80, 0.1);
         }
 
         .pagination a.disabled {
@@ -582,8 +746,9 @@ try {
         }
 
         .pagination a.active {
-            background: #4f46e5;
+            background: #4CAF50;
             color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
         .error-message {
@@ -595,8 +760,78 @@ try {
             text-align: center;
             font-size: 16px;
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #fff;
+            padding: 30px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            text-align: center;
+        }
+
+        .modal-content .success-message {
+            font-size: 16px;
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+
+        .modal-content .error-message {
+            font-size: 16px;
+            color: #dc2626;
+            margin-bottom: 20px;
+        }
+
+        .modal-content .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .modal-content .close-btn:hover {
+            color: #dc2626;
+        }
+
+        .modal-content button {
+            background: #4CAF50;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .modal-content button:hover {
+            background: #388E3C;
         }
 
         /* Mobile Responsive Design */
@@ -610,9 +845,8 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
-                bottom: 0;
                 top: auto;
-                height: auto;
+                bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
@@ -623,8 +857,8 @@ try {
             }
 
             .sidebar a {
-                margin: 0 15px;
-                font-size: 20px;
+                margin: 0 10px;
+                font-size: 18px;
             }
 
             .main-content {
@@ -677,23 +911,18 @@ try {
             }
 
             .feedback-nav {
-                flex-direction: column;
-                padding: 10px;
+                flex-direction: row;
+                padding: 5px;
+                gap: 5px;
             }
 
             .feedback-nav a {
-                padding: 10px;
+                padding: 8px 10px;
                 font-size: 14px;
-                border-bottom: 1px solid #e0e7ff;
             }
 
-            .feedback-nav a:last-child {
-                border-bottom: none;
-            }
-
-            .feedback-nav a.active {
-                background: #4f46e5;
-                color: #fff;
+            .feedback-nav a i {
+                font-size: 14px;
             }
 
             .feedback-section {
@@ -712,11 +941,26 @@ try {
             .form-group select,
             .form-group textarea {
                 font-size: 14px;
-                padding: 8px;
+                padding: 10px;
+            }
+
+            .form-group .char-counter {
+                font-size: 10px;
+                bottom: -18px;
             }
 
             .rating-group .stars label {
                 font-size: 20px;
+            }
+
+            .rating-group .tooltip {
+                font-size: 10px;
+                top: -25px;
+            }
+
+            .form-group.checkbox .tooltip {
+                font-size: 10px;
+                top: -25px;
             }
 
             .feedback-section input[type="submit"] {
@@ -730,10 +974,22 @@ try {
 
             .feedback-card {
                 padding: 10px;
-                min-height: 100px;
             }
 
-            .feedback-card p {
+            .feedback-card-header p {
+                font-size: 12px;
+            }
+
+            .feedback-card-header .status {
+                font-size: 10px;
+                padding: 4px 8px;
+            }
+
+            .feedback-card-content p {
+                font-size: 12px;
+            }
+
+            .toggle-btn {
                 font-size: 12px;
             }
 
@@ -744,10 +1000,26 @@ try {
             .pagination a {
                 padding: 6px 10px;
                 font-size: 14px;
+                min-width: 35px;
             }
 
             .error-message {
                 font-size: 14px;
+            }
+
+            .modal-content {
+                width: 95%;
+                padding: 20px;
+            }
+
+            .modal-content .success-message,
+            .modal-content .error-message {
+                font-size: 14px;
+            }
+
+            .modal-content button {
+                font-size: 14px;
+                padding: 8px 15px;
             }
         }
     </style>
@@ -755,15 +1027,15 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
             <a href="history.php" title="History"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -786,21 +1058,19 @@ try {
                 </div>
             </div>
             <div class="feedback-nav">
-                <a href="?tab=submit" class="<?php echo $active_tab === 'submit' ? 'active' : ''; ?>">Submit Feedback</a>
-                <a href="?tab=history" class="<?php echo $active_tab === 'history' ? 'active' : ''; ?>">Feedback History</a>
+                <a href="?tab=submit" class="<?php echo $active_tab === 'submit' ? 'active' : ''; ?>">
+                    <i class="fas fa-comment-dots"></i> Submit Feedback
+                </a>
+                <a href="?tab=history" class="<?php echo $active_tab === 'history' ? 'active' : ''; ?>">
+                    <i class="fas fa-history"></i> Feedback History
+                </a>
             </div>
             <div class="feedback-section <?php echo $active_tab === 'history' ? 'history-section' : ''; ?>">
                 <?php if ($active_tab === 'submit'): ?>
-                    <h2>Submit Feedback</h2>
-                    <?php if ($feedback_error): ?>
-                        <div class="error show"><?php echo htmlspecialchars($feedback_error); ?></div>
-                    <?php endif; ?>
-                    <?php if ($feedback_success): ?>
-                        <div class="success show"><?php echo htmlspecialchars($feedback_success); ?></div>
-                    <?php endif; ?>
+                    <h2><i class="fas fa-comment-dots"></i> Submit Feedback</h2>
                     <form method="POST" action="">
                         <div class="form-group">
-                            <label for="category">Category</label>
+                            <label for="category"><i class="fas fa-list"></i> Category</label>
                             <select id="category" name="category" required>
                                 <option value="">Select a category</option>
                                 <option value="bug">Bug Report</option>
@@ -809,7 +1079,7 @@ try {
                             </select>
                         </div>
                         <div class="rating-group">
-                            <label>Rating</label>
+                            <label><i class="fas fa-star"></i> Rating</label>
                             <div class="stars">
                                 <input type="radio" id="star5" name="rating" value="5" required>
                                 <label for="star5">★</label>
@@ -822,34 +1092,46 @@ try {
                                 <input type="radio" id="star1" name="rating" value="1">
                                 <label for="star1">★</label>
                             </div>
+                            <span class="tooltip">Rate your experience (1-5 stars)</span>
                         </div>
                         <div class="form-group">
-                            <label for="comments">Comments</label>
-                            <textarea id="comments" name="comments" required maxlength="1000"></textarea>
+                            <label for="comments"><i class="fas fa-comment"></i> Comments</label>
+                            <textarea id="comments" name="comments" required maxlength="1000" oninput="updateCharCounter()"></textarea>
+                            <span id="charCounter" class="char-counter">0/1000</span>
                         </div>
                         <div class="form-group checkbox">
                             <input type="checkbox" id="is_anonymous" name="is_anonymous">
-                            <label for="is_anonymous">Submit anonymously</label>
+                            <label for="is_anonymous"><i class="fas fa-user-secret"></i> Submit anonymously</label>
+                            <span class="tooltip">Your identity will not be linked to this feedback</span>
                         </div>
                         <input type="submit" value="Submit Feedback">
                     </form>
                 <?php else: ?>
-                    <h2>Feedback History</h2>
+                    <h2><i class="fas fa-history"></i> Feedback History</h2>
                     <div class="history-list">
                         <?php if (empty($feedback_history)): ?>
                             <p class="no-data">No feedback history available.</p>
                         <?php else: ?>
                             <?php foreach ($feedback_history as $entry): ?>
                                 <div class="feedback-card">
-                                    <p><strong>Date:</strong> <?php echo date('F j, Y, g:i A', strtotime($entry['submitted_at'])); ?></p>
-                                    <p><strong>Category:</strong> <?php echo ucfirst($entry['category']); ?></p>
-                                    <p><strong>Rating:</strong> <?php echo str_repeat('★', $entry['rating']) . str_repeat('☆', 5 - $entry['rating']); ?></p>
-                                    <p><strong>Comments:</strong> <?php echo htmlspecialchars($entry['comments']); ?></p>
-                                    <p><strong>Anonymous:</strong> <?php echo $entry['is_anonymous'] ? 'Yes' : 'No'; ?></p>
-                                    <p><strong>Status:</strong> <span class="status-<?php echo str_replace('_', '-', $entry['status']); ?>"><?php echo ucfirst(str_replace('_', ' ', $entry['status'])); ?></span></p>
-                                    <?php if ($entry['response']): ?>
-                                        <p><strong>Response:</strong> <?php echo htmlspecialchars($entry['response']); ?></p>
-                                    <?php endif; ?>
+                                    <div class="feedback-card-header">
+                                        <p><strong>Date:</strong> <?php echo date('F j, Y, g:i A', strtotime($entry['submitted_at'])); ?></p>
+                                        <span class="status status-<?php echo str_replace('_', '-', $entry['status']); ?>">
+                                            <?php echo ucfirst(str_replace('_', ' ', $entry['status'])); ?>
+                                        </span>
+                                    </div>
+                                    <div class="feedback-card-content" id="content-<?php echo $entry['feedback_id']; ?>">
+                                        <p><strong>Category:</strong> <?php echo ucfirst($entry['category']); ?></p>
+                                        <p><strong>Rating:</strong> <span class="rating"><?php echo str_repeat('★', $entry['rating']) . str_repeat('☆', 5 - $entry['rating']); ?></span></p>
+                                        <p><strong>Comments:</strong> <?php echo htmlspecialchars($entry['comments']); ?></p>
+                                        <p><strong>Anonymous:</strong> <?php echo $entry['is_anonymous'] ? 'Yes' : 'No'; ?></p>
+                                        <?php if ($entry['response']): ?>
+                                            <p><strong>Response:</strong> <?php echo htmlspecialchars($entry['response']); ?></p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <button class="toggle-btn" onclick="toggleContent('content-<?php echo $entry['feedback_id']; ?>', this)">
+                                        Show More
+                                    </button>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -870,6 +1152,24 @@ try {
                     </div>
                 <?php endif; ?>
             </div>
+            <!-- Modal for Success/Error Messages -->
+            <?php if ($feedback_success): ?>
+                <div class="modal active" id="feedbackModal">
+                    <div class="modal-content">
+                        <span class="close-btn" onclick="closeModal('feedbackModal')">×</span>
+                        <div class="success-message"><?php echo htmlspecialchars($feedback_success); ?></div>
+                        <button onclick="closeModal('feedbackModal')">Close</button>
+                    </div>
+                </div>
+            <?php elseif ($feedback_error): ?>
+                <div class="modal active" id="feedbackModal">
+                    <div class="modal-content">
+                        <span class="close-btn" onclick="closeModal('feedbackModal')">×</span>
+                        <div class="error-message"><?php echo htmlspecialchars($feedback_error); ?></div>
+                        <button onclick="closeModal('feedbackModal')">Close</button>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -878,6 +1178,7 @@ try {
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
@@ -930,6 +1231,40 @@ try {
                 profileDropdown.classList.remove('active');
             }
         });
+
+        // Modal functionality
+        function closeModal(modalId) {
+            document.querySelector(`#${modalId}`).classList.remove('active');
+        }
+
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
+
+        // Character counter for comments
+        function updateCharCounter() {
+            const textarea = document.querySelector('#comments');
+            const counter = document.querySelector('#charCounter');
+            const count = textarea.value.length;
+            counter.textContent = `${count}/1000`;
+            if (count > 900) {
+                counter.classList.add('warning');
+            } else {
+                counter.classList.remove('warning');
+            }
+        }
+
+        // Toggle feedback card content
+        function toggleContent(contentId, btn) {
+            const content = document.getElementById(contentId);
+            content.classList.toggle('expanded');
+            btn.textContent = content.classList.contains('expanded') ? 'Show Less' : 'Show More';
+        }
+
+        // Initialize character counter on page load
+        document.addEventListener('DOMContentLoaded', updateCharCounter);
     </script>
 </body>
 </html>

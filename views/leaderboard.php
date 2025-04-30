@@ -18,6 +18,7 @@ $region_name = 'Unknown Region';
 $user_barangay_rank = 'N/A';
 $barangay_rank = 'N/A';
 $barangay_total_trees = 0;
+$barangay_last_updated = 'N/A';
 $region_rank = 'N/A';
 $region_total_trees = 0;
 $user_in_barangay = null;
@@ -41,7 +42,33 @@ try {
     }
 
     // Convert profile picture to base64 for display
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
+
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
+    $stmt->execute();
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Update Rankings Table in Real-Time
     // Step 1: Aggregate total trees planted per barangay
@@ -138,9 +165,9 @@ try {
             }
         }
 
-        // Fetch barangay's total trees and rank
+        // Fetch barangay's total trees, rank, and last updated time
         $stmt = $pdo->prepare("
-            SELECT total_trees_planted, rank_position 
+            SELECT total_trees_planted, rank_position, updated_at 
             FROM rankings 
             WHERE barangay_id = :barangay_id
         ");
@@ -150,6 +177,7 @@ try {
         if ($barangay_ranking) {
             $barangay_total_trees = $barangay_ranking['total_trees_planted'];
             $barangay_rank = $barangay_ranking['rank_position'];
+            $barangay_last_updated = date('M d, Y H:i', strtotime($barangay_ranking['updated_at']));
             $user_barangay = [
                 'name' => $barangay_name,
                 'total_trees_planted' => $barangay_total_trees,
@@ -232,8 +260,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leaderboard - Tree Planting Initiative</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <title>Leaderboard - Green Roots</title>
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -259,7 +287,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -267,18 +295,17 @@ try {
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
             position: fixed;
             top: 0;
-            left: 0;
-            height: 100vh;
-            z-index: 100;
+            bottom: 0;
+            overflow-y: auto;
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 70px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
@@ -286,13 +313,13 @@ try {
         }
 
         .sidebar a:hover {
-            color: #4f46e5;
+            color: #4CAF50;
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
-            margin-left: 80px; /* Match sidebar width */
+            margin-left: 80px;
         }
 
         .header {
@@ -306,7 +333,7 @@ try {
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -423,7 +450,7 @@ try {
         }
 
         .leaderboard-section {
-            background: #fff;
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -431,7 +458,7 @@ try {
         }
 
         .leaderboard-section.your-rankings {
-            background: #d1fae5; /* Light green for tree planting theme */
+            background: rgb(187, 235, 191);
         }
 
         .leaderboard-section.clickable {
@@ -444,14 +471,25 @@ try {
 
         .leaderboard-section h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color:rgb(54, 134, 56);
             margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .leaderboard-section p {
             font-size: 16px;
+            font-weight: bold;
             color: #666;
             margin-bottom: 10px;
+        }
+
+        .last-updated {
+            font-size: 14px;
+            color: #999;
+            font-style: italic;
+            margin-top: 10px;
         }
 
         .leaderboard-list {
@@ -469,10 +507,15 @@ try {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: background 0.3s ease;
+        }
+
+        .leaderboard-list li:hover {
+            background: rgba(76, 175, 80, 0.1);
         }
 
         .leaderboard-list li.authenticated-user {
-            background: #e0e7ff; /* Light indigo for highlighting */
+            background: rgb(187, 235, 191);
             font-weight: bold;
         }
 
@@ -484,6 +527,50 @@ try {
             text-align: center;
             color: #666;
             font-style: italic;
+        }
+
+        .leaderboard-list .rank-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .leaderboard-list .rank-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+        }
+
+        .leaderboard-list .rank-badge.gold {
+            background: linear-gradient(135deg, #FFD700 0%, #FFC107 100%);
+        }
+
+        .leaderboard-list .rank-badge.silver {
+            background: linear-gradient(135deg, #C0C0C0 0%, #A9A9A9 100%);
+        }
+
+        .leaderboard-list .rank-badge.bronze {
+            background: linear-gradient(135deg, #CD7F32 0%, #B87333 100%);
+        }
+
+        .leaderboard-list .rank-badge.platinum {
+            background: linear-gradient(135deg, #E5E4E2 0%, #D3D2D0 100%);
+        }
+
+        .leaderboard-list .rank-badge.titanium {
+            background: linear-gradient(135deg, #878681 0%, #6F6E6A 100%);
+        }
+
+        .leaderboard-list .rank-badge.iron {
+            background: linear-gradient(135deg, #D7D9D7 0%, #B0B2B0 100%);
         }
 
         .modal {
@@ -516,7 +603,7 @@ try {
 
         .modal-content h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 20px;
         }
 
@@ -532,6 +619,19 @@ try {
 
         .modal-content .close-btn:hover {
             color: #dc2626;
+        }
+
+        .modal-content .modal-search {
+            margin-bottom: 20px;
+        }
+
+        .modal-content .modal-search input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e0e7ff;
+            border-radius: 5px;
+            font-size: 16px;
+            outline: none;
         }
 
         .modal-content .leaderboard-list {
@@ -562,9 +662,8 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
-                bottom: 0;
                 top: auto;
-                height: auto;
+                bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
@@ -575,8 +674,8 @@ try {
             }
 
             .sidebar a {
-                margin: 0 15px;
-                font-size: 20px;
+                margin: 0 10px;
+                font-size: 18px;
             }
 
             .main-content {
@@ -610,7 +709,7 @@ try {
             }
 
             .header .profile {
-                margin-top: 0;
+                margin-top:-rdf0;
             }
 
             .header .profile img {
@@ -645,11 +744,21 @@ try {
                 font-size: 14px;
             }
 
+            .last-updated {
+                font-size: 12px;
+            }
+
             .leaderboard-list li {
                 font-size: 14px;
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 5px;
+            }
+
+            .leaderboard-list .rank-badge {
+                width: 24px;
+                height: 24px;
+                font-size: 12px;
             }
 
             .modal-content {
@@ -659,6 +768,11 @@ try {
 
             .modal-content h2 {
                 font-size: 24px;
+            }
+
+            .modal-content .modal-search input {
+                padding: 8px;
+                font-size: 14px;
             }
 
             .modal-content .leaderboard-list li {
@@ -674,15 +788,15 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
             <a href="history.php" title="History"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -699,6 +813,7 @@ try {
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
+                        <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                         <a href="account_settings.php">Account</a>
                         <a href="logout.php">Logout</a>
                     </div>
@@ -710,6 +825,7 @@ try {
                     <p>Rank in <?php echo htmlspecialchars($barangay_name); ?>: <?php echo $user_barangay_rank; ?></p>
                     <p><?php echo htmlspecialchars($barangay_name); ?> Rank: <?php echo $barangay_rank; ?> with <?php echo $barangay_total_trees; ?> trees</p>
                     <p><?php echo htmlspecialchars($region_name); ?> Rank: <?php echo $region_rank; ?></p>
+                    <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                 </div>
                 <div class="leaderboard-section clickable" id="topUsersCard">
                     <h2>Top Users in <?php echo htmlspecialchars($barangay_name); ?></h2>
@@ -718,11 +834,17 @@ try {
                             <li class="no-data">No ranking available.</li>
                         <?php else: ?>
                             <li class="authenticated-user">
-                                <span><?php echo htmlspecialchars($user_in_barangay['username']); ?> (Rank: <?php echo $user_in_barangay['user_rank']; ?>)</span>
+                                <div class="rank-container">
+                                    <span class="rank-badge <?php echo $user_in_barangay['user_rank'] == 1 ? 'gold' : ($user_in_barangay['user_rank'] == 2 ? 'silver' : ($user_in_barangay['user_rank'] == 3 ? 'bronze' : ($user_in_barangay['user_rank'] == 4 ? 'platinum' : ($user_in_barangay['user_rank'] == 5 ? 'titanium' : 'iron')))); ?>">
+                                        <?php echo $user_in_barangay['user_rank']; ?>
+                                    </span>
+                                    <span><?php echo htmlspecialchars($user_in_barangay['username']); ?></span>
+                                </div>
                                 <span><?php echo $user_in_barangay['trees_planted']; ?> trees</span>
                             </li>
                         <?php endif; ?>
                     </ul>
+                    <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                 </div>
                 <div class="leaderboard-section clickable" id="topBarangaysCard">
                     <h2>Top Barangays</h2>
@@ -731,11 +853,17 @@ try {
                             <li class="no-data">No barangay ranking available.</li>
                         <?php else: ?>
                             <li class="authenticated-user">
-                                <span><?php echo htmlspecialchars($user_barangay['name']); ?> (Rank: <?php echo $user_barangay['rank_position']; ?>)</span>
+                                <div class="rank-container">
+                                    <span class="rank-badge <?php echo $user_barangay['rank_position'] == 1 ? 'gold' : ($user_barangay['rank_position'] == 2 ? 'silver' : ($user_barangay['rank_position'] == 3 ? 'bronze' : ($user_barangay['rank_position'] == 4 ? 'platinum' : ($user_barangay['rank_position'] == 5 ? 'titanium' : 'iron')))); ?>">
+                                        <?php echo $user_barangay['rank_position']; ?>
+                                    </span>
+                                    <span><?php echo htmlspecialchars($user_barangay['name']); ?></span>
+                                </div>
                                 <span><?php echo $user_barangay['total_trees_planted']; ?> trees</span>
                             </li>
                         <?php endif; ?>
                     </ul>
+                    <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                 </div>
                 <div class="leaderboard-section clickable" id="topRegionsCard">
                     <h2>Top Regions</h2>
@@ -744,11 +872,17 @@ try {
                             <li class="no-data">No region ranking available.</li>
                         <?php else: ?>
                             <li class="authenticated-user">
-                                <span><?php echo htmlspecialchars($user_region['name']); ?> (Rank: <?php echo $user_region['rank_position']; ?>)</span>
+                                <div class="rank-container">
+                                    <span class="rank-badge <?php echo $user_region['rank_position'] == 1 ? 'gold' : ($user_region['rank_position'] == 2 ? 'silver' : ($user_region['rank_position'] == 3 ? 'bronze' : ($user_region['rank_position'] == 4 ? 'platinum' : ($user_region['rank_position'] == 5 ? 'titanium' : 'iron')))); ?>">
+                                        <?php echo $user_region['rank_position']; ?>
+                                    </span>
+                                    <span><?php echo htmlspecialchars($user_region['name']); ?></span>
+                                </div>
                                 <span><?php echo $user_region['total_trees']; ?> trees</span>
                             </li>
                         <?php endif; ?>
                     </ul>
+                    <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                 </div>
             </div>
 
@@ -757,13 +891,21 @@ try {
                 <div class="modal-content">
                     <span class="close-btn" onclick="closeModal('topUsersModal')">×</span>
                     <h2>All Users in <?php echo htmlspecialchars($barangay_name); ?></h2>
-                    <ul class="leaderboard-list">
+                    <div class="modal-search">
+                        <input type="text" placeholder="Search users..." id="usersSearchInput">
+                    </div>
+                    <ul class="leaderboard-list" id="usersList">
                         <?php if (empty($all_users)): ?>
                             <li class="no-data">No users available.</li>
                         <?php else: ?>
                             <?php foreach ($all_users as $user): ?>
-                                <li class="<?php echo $user['username'] === $username ? 'authenticated-user' : ''; ?>">
-                                    <span><?php echo htmlspecialchars($user['username']); ?> (Rank: <?php echo $user['user_rank']; ?>)</span>
+                                <li class="<?php echo $user['username'] === $username ? 'authenticated-user' : ''; ?>" data-name="<?php echo htmlspecialchars($user['username']); ?>">
+                                    <div class="rank-container">
+                                        <span class="rank-badge <?php echo $user['user_rank'] == 1 ? 'gold' : ($user['user_rank'] == 2 ? 'silver' : ($user['user_rank'] == 3 ? 'bronze' : ($user['user_rank'] == 4 ? 'platinum' : ($user['user_rank'] == 5 ? 'titanium' : 'iron')))); ?>">
+                                            <?php echo $user['user_rank']; ?>
+                                        </span>
+                                        <span><?php echo htmlspecialchars($user['username']); ?></span>
+                                    </div>
                                     <span><?php echo $user['trees_planted']; ?> trees</span>
                                 </li>
                             <?php endforeach; ?>
@@ -777,13 +919,21 @@ try {
                 <div class="modal-content">
                     <span class="close-btn" onclick="closeModal('topBarangaysModal')">×</span>
                     <h2>All Barangays</h2>
-                    <ul class="leaderboard-list">
+                    <div class="modal-search">
+                        <input type="text" placeholder="Search barangays..." id="barangaysSearchInput">
+                    </div>
+                    <ul class="leaderboard-list" id="barangaysList">
                         <?php if (empty($all_barangays)): ?>
                             <li class="no-data">No barangay rankings available.</li>
                         <?php else: ?>
                             <?php foreach ($all_barangays as $barangay): ?>
-                                <li class="<?php echo $barangay['name'] === $barangay_name ? 'authenticated-user' : ''; ?>">
-                                    <span><?php echo htmlspecialchars($barangay['name']); ?> (Rank: <?php echo $barangay['rank_position']; ?>)</span>
+                                <li class="<?php echo $barangay['name'] === $barangay_name ? 'authenticated-user' : ''; ?>" data-name="<?php echo htmlspecialchars($barangay['name']); ?>">
+                                    <div class="rank-container">
+                                        <span class="rank-badge <?php echo $barangay['rank_position'] == 1 ? 'gold' : ($barangay['rank_position'] == 2 ? 'silver' : ($barangay['rank_position'] == 3 ? 'bronze' : ($barangay['rank_position'] == 4 ? 'platinum' : ($barangay['rank_position'] == 5 ? 'titanium' : 'iron')))); ?>">
+                                            <?php echo $barangay['rank_position']; ?>
+                                        </span>
+                                        <span><?php echo htmlspecialchars($barangay['name']); ?></span>
+                                    </div>
                                     <span><?php echo $barangay['total_trees_planted']; ?> trees</span>
                                 </li>
                             <?php endforeach; ?>
@@ -797,13 +947,21 @@ try {
                 <div class="modal-content">
                     <span class="close-btn" onclick="closeModal('topRegionsModal')">×</span>
                     <h2>All Regions</h2>
-                    <ul class="leaderboard-list">
+                    <div class="modal-search">
+                        <input type="text" placeholder="Search regions..." id="regionsSearchInput">
+                    </div>
+                    <ul class="leaderboard-list" id="regionsList">
                         <?php if (empty($all_regions)): ?>
                             <li class="no-data">No region rankings available.</li>
                         <?php else: ?>
                             <?php foreach ($all_regions as $index => $region): ?>
-                                <li class="<?php echo $region['name'] === $region_name ? 'authenticated-user' : ''; ?>">
-                                    <span><?php echo htmlspecialchars($region['name']); ?> (Rank: <?php echo $index + 1; ?>)</span>
+                                <li class="<?php echo $region['name'] === $region_name ? 'authenticated-user' : ''; ?>" data-name="<?php echo htmlspecialchars($region['name']); ?>">
+                                    <div class="rank-container">
+                                        <span class="rank-badge <?php echo ($index + 1) == 1 ? 'gold' : (($index + 1) == 2 ? 'silver' : (($index + 1) == 3 ? 'bronze' : (($index + 1) == 4 ? 'platinum' : (($index + 1) == 5 ? 'titanium' : 'iron')))); ?>">
+                                            <?php echo $index + 1; ?>
+                                        </span>
+                                        <span><?php echo htmlspecialchars($region['name']); ?></span>
+                                    </div>
                                     <span><?php echo $region['total_trees']; ?> trees</span>
                                 </li>
                             <?php endforeach; ?>
@@ -815,10 +973,11 @@ try {
     </div>
 
     <script>
-        // Search bar functionality
+        // Search bar functionality for navigation
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
@@ -901,6 +1060,40 @@ try {
                 e.target.classList.remove('active');
             }
         });
+
+        // Modal search functionality
+        function setupModalSearch(inputId, listId) {
+            const searchInput = document.querySelector(`#${inputId}`);
+            const listItems = document.querySelectorAll(`#${listId} li:not(.no-data)`);
+
+            searchInput.addEventListener('input', function(e) {
+                const query = e.target.value.toLowerCase();
+                listItems.forEach(item => {
+                    const name = item.getAttribute('data-name').toLowerCase();
+                    if (name.includes(query)) {
+                        item.style.display = 'flex';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+
+                const list = document.querySelector(`#${listId}`);
+                const noData = list.querySelector('.no-data');
+                const visibleItems = Array.from(listItems).filter(item => item.style.display !== 'none');
+                if (visibleItems.length === 0 && !noData) {
+                    const noResult = document.createElement('li');
+                    noResult.className = 'no-data';
+                    noResult.textContent = 'No matching results.';
+                    list.appendChild(noResult);
+                } else if (visibleItems.length > 0 && noData) {
+                    noData.remove();
+                }
+            });
+        }
+
+        setupModalSearch('usersSearchInput', 'usersList');
+        setupModalSearch('barangaysSearchInput', 'barangaysList');
+        setupModalSearch('regionsSearchInput', 'regionsList');
     </script>
 </body>
 </html>

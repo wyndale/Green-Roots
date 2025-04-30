@@ -31,11 +31,29 @@ try {
     // Convert profile picture to base64 for display
     $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
 
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
+    $stmt->execute();
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
+
     // Handle Profile Picture Update
     $profile_error = '';
     $profile_success = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
-        if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] !== UPLOAD_ERR_NO_FILE) {
+        if (isset($_POST['remove_picture']) && $_POST['remove_picture'] === '1') {
+            // Remove profile picture
+            $stmt = $pdo->prepare("UPDATE users SET profile_picture = NULL WHERE user_id = :user_id");
+            $stmt->execute(['user_id' => $user_id]);
+            $user['profile_picture'] = null;
+            $profile_picture_data = 'profile.jpg';
+            $profile_success = 'Profile picture removed successfully!';
+        } elseif (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] !== UPLOAD_ERR_NO_FILE) {
             $file = $_FILES['profile_picture'];
             $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
             $max_size = 20 * 1024 * 1024; // 20MB
@@ -44,7 +62,7 @@ try {
             if (!in_array($file['type'], $allowed_types)) {
                 $profile_error = 'Only JPEG, PNG, and GIF files are allowed.';
             } elseif ($file['size'] > $max_size) {
-                $profile_error = 'File size must be less than 5MB.';
+                $profile_error = 'File size must be less than 20MB.';
             } else {
                 // Read the file content as binary data
                 $image_data = file_get_contents($file['tmp_name']);
@@ -76,8 +94,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profile - Tree Planting Initiative</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <title>Profile - Green Roots</title>
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -103,7 +121,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -111,35 +129,34 @@ try {
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
             position: fixed;
             top: 0;
-            left: 0;
-            height: 100vh;
-            z-index: 100;
+            bottom: 0;
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 70px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s;
+            transition: color 0.3s, transform 0.2s;
         }
 
         .sidebar a:hover {
-            color: #4f46e5;
+            color: #4CAF50;
+            transform: scale(1.1);
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px; /* Match sidebar width */
         }
 
         .header {
@@ -148,12 +165,13 @@ try {
             align-items: center;
             margin-bottom: 20px;
             width: 100%;
+            max-width: 1200px;
             position: relative;
         }
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -258,7 +276,7 @@ try {
         }
 
         .profile-dropdown a:hover {
-            background: #e0e7ff;
+            background: #e0e7ff Concord;
         }
 
         .account-nav {
@@ -268,9 +286,10 @@ try {
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
-            padding: 15px 0;
+            padding: 10px;
             display: flex;
             justify-content: space-around;
+            gap: 10px;
         }
 
         .account-nav a {
@@ -278,20 +297,42 @@ try {
             text-decoration: none;
             font-size: 16px;
             padding: 10px 20px;
-            transition: color 0.3s;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            flex: 1;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .account-nav a i {
+            color: #666;
+            transition: color 0.3s ease;
         }
 
         .account-nav a.active {
-            color: #4f46e5;
-            border-bottom: 2px solid #4f46e5;
+            background: rgb(187, 235, 191);
+            color: #4CAF50;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .account-nav a.active i {
+            color: #4CAF50;
         }
 
         .account-nav a:hover {
-            color: #4f46e5;
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+        }
+
+        .account-nav a:hover i {
+            color: #4CAF50;
         }
 
         .account-section {
-            background: #fff;
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -302,8 +343,21 @@ try {
 
         .account-section h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .account-section h2 i {
+            color: #4CAF50;
+        }
+
+        .account-section h3 {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 5px;
         }
 
         .account-section .error {
@@ -313,7 +367,6 @@ try {
             border-radius: 5px;
             margin-bottom: 20px;
             text-align: center;
-            display: none;
             font-size: 16px;
         }
 
@@ -324,17 +377,12 @@ try {
             border-radius: 5px;
             margin-bottom: 20px;
             text-align: center;
-            display: none;
             font-size: 16px;
-        }
-
-        .account-section .error.show,
-        .account-section .success.show {
-            display: block;
         }
 
         .account-section .form-group {
             margin-bottom: 25px;
+            position: relative;
         }
 
         .account-section .profile-preview {
@@ -349,6 +397,7 @@ try {
             height: 100px;
             border-radius: 50%;
             object-fit: cover;
+            border: 2px solid #4CAF50;
         }
 
         .account-section label {
@@ -356,35 +405,114 @@ try {
             font-size: 16px;
             color: #666;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
 
-        .account-section input[type="file"] {
+        .account-section label i {
+            color: #4CAF50;
+        }
+
+        .account-section .file-input-wrapper {
+            position: relative;
             width: 100%;
-            padding: 12px;
+            height: 45px;
             border: 1px solid #e0e7ff;
-            border-radius: 5px;
+            border-radius: 8px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .account-section .file-input-wrapper:hover {
+            border-color: #4CAF50;
+        }
+
+        .account-section .file-input-wrapper input[type="file"] {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .account-section .file-input-wrapper .file-name {
+            flex: 1;
             font-size: 16px;
-            outline: none;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .account-section input:focus {
-            border-color: #4f46e5;
+        .account-section .file-input-wrapper .custom-button {
+            background: #4CAF50;
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
         }
 
-        .account-section input[type="submit"] {
-            background: #4f46e5;
+        .account-section .file-input-wrapper .custom-button:hover {
+            background: #388E3C;
+        }
+
+        .account-section .field-error {
+            color: #dc2626;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .account-section .field-error.show {
+            display: block;
+        }
+
+        .account-section .button-group {
+            display: flex;
+            gap: 15px;
+        }
+
+        .account-section input[type="submit"],
+        .account-section button {
+            background: #4CAF50;
             color: #fff;
             border: none;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
             padding: 12px;
             font-size: 16px;
+            font-weight: bold;
             width: 100%;
-            border-radius: 5px;
+            border-radius: 8px;
         }
 
-        .account-section input[type="submit"]:hover {
-            background: #7c3aed;
+        .account-section input[type="submit"]:hover,
+        .account-section button:hover {
+            background: #388E3C;
+            transform: scale(1.02);
+        }
+
+        .account-section button.cancel {
+            background: #666;
+            font-weight: bold;
+        }
+
+        .account-section button.cancel:hover {
+            background: #555;
+        }
+
+        .account-section button.remove {
+            background: #dc2626;
+        }
+
+        .account-section button.remove:hover {
+            background: #b91c1c;
         }
 
         .error-message {
@@ -411,9 +539,8 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
-                bottom: 0;
                 top: auto;
-                height: auto;
+                bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
@@ -424,8 +551,8 @@ try {
             }
 
             .sidebar a {
-                margin: 0 15px;
-                font-size: 20px;
+                margin: 0 10px;
+                font-size: 18px;
             }
 
             .main-content {
@@ -479,21 +606,17 @@ try {
 
             .account-nav {
                 flex-direction: column;
-                padding: 10px;
+                padding: 5px;
+                gap: 5px;
             }
 
             .account-nav a {
-                padding: 10px;
+                padding: 8px 10px;
                 font-size: 14px;
-                border-bottom: 1px solid #e0e7ff;
             }
 
-            .account-nav a:last-child {
-                border: none;
-            }
-
-            .account-nav a.active {
-                border-bottom: 2px solid #4f46e5;
+            .account-nav a i {
+                font-size: 14px;
             }
 
             .account-section {
@@ -502,6 +625,10 @@ try {
 
             .account-section h2 {
                 font-size: 24px;
+            }
+
+            .account-section h3 {
+                font-size: 18px;
             }
 
             .account-section .profile-preview img {
@@ -513,14 +640,32 @@ try {
                 font-size: 14px;
             }
 
-            .account-section input[type="file"] {
+            .account-section .file-input-wrapper {
+                height: 40px;
+            }
+
+            .account-section .file-input-wrapper .file-name {
+                font-size: 14px;
+            }
+
+            .account-section .file-input-wrapper .custom-button {
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+
+            .account-section .field-error {
+                font-size: 10px;
+            }
+
+            .account-section input[type="submit"],
+            .account-section button {
                 padding: 10px;
                 font-size: 14px;
             }
 
-            .account-section input[type="submit"] {
-                padding: 10px;
-                font-size: 14px;
+            .account-section .button-group {
+                flex-direction: column;
+                gap: 10px;
             }
 
             .error-message {
@@ -532,15 +677,15 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
             <a href="history.php" title="History"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -563,32 +708,43 @@ try {
                 </div>
             </div>
             <div class="account-nav">
-                <a href="account_settings.php">Account Settings</a>
-                <a href="profile.php" class="active">Profile</a>
-                <a href="password_security.php">Password & Security</a>
-                <a href="payment_methods.php">Payment Methods</a>
+                <a href="account_settings.php"><i class="fas fa-user-cog"></i> Account Settings</a>
+                <a href="profile.php" class="active"><i class="fas fa-user"></i> Profile</a>
+                <a href="password_security.php"><i class="fas fa-lock"></i> Password & Security</a>
+                <a href="payment_methods.php"><i class="fas fa-credit-card"></i> Payment Methods</a>
             </div>
             <div class="account-section">
+                <h2><i class="fas fa-user"></i> Profile</h2>
                 <?php if ($profile_error): ?>
-                    <div class="error show"><?php echo htmlspecialchars($profile_error); ?></div>
+                    <div class="error"><?php echo htmlspecialchars($profile_error); ?></div>
                 <?php endif; ?>
                 <?php if ($profile_success): ?>
-                    <div class="success show"><?php echo htmlspecialchars($profile_success); ?></div>
+                    <div class="success"><?php echo htmlspecialchars($profile_success); ?></div>
                 <?php endif; ?>
                 <form method="POST" action="" enctype="multipart/form-data">
                     <input type="hidden" name="update_profile" value="1">
                     <div class="profile-preview">
-                        <img src="<?php echo $profile_picture_data; ?>" alt="Profile Picture">
+                        <img id="profilePreview" src="<?php echo $profile_picture_data; ?>" alt="Profile Picture">
                         <div>
                             <h3>Current Profile Picture</h3>
                             <p>Upload a new picture to update.</p>
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="profile_picture">Upload New Profile Picture</label>
-                        <input type="file" id="profile_picture" name="profile_picture" accept="image/jpeg,image/png,image/gif">
+                        <label for="profile_picture"><i class="fas fa-image"></i> Upload New Profile Picture</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="profile_picture" name="profile_picture" accept="image/jpeg,image/png,image/gif">
+                            <span class="file-name">No file chosen</span>
+                            <span class="custom-button">Choose File</span>
+                        </div>
                     </div>
-                    <input type="submit" value="Update Profile Picture">
+                    <div class="button-group">
+                        <input type="submit" value="Update Profile Picture">
+                        <button type="button" class="cancel" onclick="window.location.reload()">Cancel</button>
+                        <?php if ($user['profile_picture']): ?>
+                            <button type="submit" class="remove" name="remove_picture" value="1">Remove Picture</button>
+                        <?php endif; ?>
+                    </div>
                 </form>
             </div>
         </div>
@@ -599,6 +755,7 @@ try {
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
@@ -649,6 +806,26 @@ try {
         document.addEventListener('click', function(e) {
             if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
                 profileDropdown.classList.remove('active');
+            }
+        });
+
+        // File input preview functionality
+        const fileInput = document.querySelector('#profile_picture');
+        const fileName = document.querySelector('.file-name');
+        const profilePreview = document.querySelector('#profilePreview');
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                fileName.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    profilePreview.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                fileName.textContent = 'No file chosen';
+                profilePreview.src = '<?php echo $profile_picture_data; ?>';
             }
         });
     </script>

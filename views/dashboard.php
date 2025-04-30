@@ -86,7 +86,7 @@ try {
     $user_rank = $stmt->fetchColumn();
     $user_rank_display = $user_rank !== false ? $user_rank : "Not Ranked";
 
-    // Fetch upcoming events
+    // Fetch the 3 most recent upcoming events
     $stmt = $pdo->prepare("
         SELECT title, event_date, location 
         FROM events 
@@ -106,7 +106,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Green Roots</title>
+    <title>Dashboard</title>
     <link rel="icon" type="image/png" sizes="64x64" href="<?php echo $icon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -139,10 +139,13 @@ try {
             align-items: center;
             border-radius: 0 20px 20px 0;
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            top: 0;
+            bottom: 0;
         }
 
         .sidebar img.logo {
-            width: 80px;
+            width: 70px;
             margin-bottom: 20px;
         }
 
@@ -155,12 +158,13 @@ try {
         }
 
         .sidebar a:hover {
-            color: #4CAF50; /* Updated to match color scheme */
+            color: #4CAF50;
         }
 
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
         }
 
         .header {
@@ -173,7 +177,7 @@ try {
 
         .header h1 {
             font-size: 36px;
-            color: #4CAF50; /* Replaced #1e3a8a with color scheme */
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -282,7 +286,7 @@ try {
         }
 
         .card {
-            background:rgb(187, 235, 191); /* Applied background color from color scheme */
+            background: rgb(187, 235, 191);
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -298,7 +302,7 @@ try {
 
         .card .details h2 {
             font-size: 28px;
-            color:rgb(55, 122, 57);  /* Replaced #1e3a8a with color scheme */
+            color: rgb(55, 122, 57);
         }
 
         .stats-grid {
@@ -308,7 +312,7 @@ try {
         }
 
         .stat-box {
-            background: #E8F5E9; /* Applied background color from color scheme */
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -323,7 +327,7 @@ try {
         .stat-box h3 {
             font-size: 20px;
             margin-bottom: 15px;
-            color: #4CAF50; /* Replaced #1e3a8a with color scheme */
+            color: #4CAF50;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -411,7 +415,7 @@ try {
             left: 50%;
             transform: translateX(-50%);
             font-size: 20px;
-            color: #4CAF50; /* Replaced #1e3a8a with color scheme */
+            color: #4CAF50;
             font-weight: bold;
         }
 
@@ -422,12 +426,13 @@ try {
         .stat-box ul li {
             padding: 12px 0;
             border-bottom: 1px solid #e0e7ff;
-            font-size: 16px;
+            font-size: 15px;
+            font-weight: bold;
         }
 
         .download-btn {
             display: block;
-            background: #4CAF50; /* Updated to match color scheme */
+            background: #4CAF50;
             color: #fff;
             text-align: center;
             padding: 15px;
@@ -440,7 +445,7 @@ try {
         }
 
         .download-btn:hover {
-            background: #388E3C; /* Updated hover color to match color scheme */
+            background: #388E3C;
         }
 
         .error-message {
@@ -465,6 +470,7 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
+                top: auto;
                 bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
@@ -478,12 +484,13 @@ try {
 
             .sidebar a {
                 margin: 0 10px;
-                font-size: 20px;
+                font-size: 18px;
             }
 
             .main-content {
                 padding: 20px;
                 padding-bottom: 80px;
+                margin-left: 0;
             }
 
             .header {
@@ -606,6 +613,7 @@ try {
             <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
@@ -617,7 +625,7 @@ try {
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
             <?php endif; ?>
             <div class="header">
-                <h1>Tree Planting Dashboard</h1>
+                <h1>Green Roots</h1>
                 <div class="search-bar">
                     <input type="text" placeholder="Search functionalities..." id="searchInput">
                     <div class="search-results" id="searchResults"></div>
@@ -676,6 +684,9 @@ try {
                                 <?php echo htmlspecialchars($event['location']); ?>
                             </li>
                         <?php endforeach; ?>
+                        <?php if (empty($events)): ?>
+                            <li>No upcoming events.</li>
+                        <?php endif; ?>
                     </ul>
                 </div>
             </div>
@@ -688,6 +699,7 @@ try {
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
@@ -752,8 +764,8 @@ try {
                 datasets: [{
                     label: 'CO₂ Offset (kg)',
                     data: monthlyData,
-                    borderColor: '#4CAF50', /* Updated to match color scheme */
-                    backgroundColor: 'rgba(76, 175, 80, 0.2)', /* Updated to match color scheme */
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.2)',
                     fill: true,
                     tension: 0.4
                 }]

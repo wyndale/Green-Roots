@@ -3,7 +3,7 @@
 $host = 'localhost';
 $dbname = 'greenroots_db';
 $username = 'root'; // Default XAMPP username
-$password = ')l6..O[btkCXpBWd'; // Default XAMPP password (empty)
+$password = ')l6..O[btkCXpBWd';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
