@@ -24,8 +24,45 @@ try {
         exit;
     }
 
-    // Convert profile picture to base64 for display
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+    // Fetch profile picture (custom or default)
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            // Determine MIME type based on asset_type or file content
+            $mime_type = 'image/jpeg'; // Default
+            if ($asset['asset_type'] === 'default_profile') {
+                // Since you confirmed it's PNG
+                $mime_type = 'image/png';
+            } else {
+                // Optionally, detect MIME type dynamically
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime_type = finfo_buffer($finfo, $asset['asset_data']);
+                finfo_close($finfo);
+            }
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
+
+    // Fetch icon
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'icon' LIMIT 1");
+    $stmt->execute();
+    $icon_data = $stmt->fetchColumn();
+    $icon_base64 = $icon_data ? 'data:image/png;base64,' . base64_encode($icon_data) : '../assets/icon.png';
+
+    // Fetch logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
+    $stmt->execute();
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Calculate CO2 Offset: 1 tree offsets ~22 kg CO2 per year
     $co2_offset = $user['trees_planted'] * 22; // in kg
@@ -69,8 +106,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Tree Planting Initiative</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <title>Green Roots</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="<?php echo $icon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -96,7 +133,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -105,12 +142,12 @@ try {
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 80px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
@@ -118,7 +155,7 @@ try {
         }
 
         .sidebar a:hover {
-            color: #4f46e5;
+            color: #4CAF50; /* Updated to match color scheme */
         }
 
         .main-content {
@@ -136,7 +173,7 @@ try {
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50; /* Replaced #1e3a8a with color scheme */
         }
 
         .header .search-bar {
@@ -245,7 +282,7 @@ try {
         }
 
         .card {
-            background: #fff;
+            background:rgb(187, 235, 191); /* Applied background color from color scheme */
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -261,7 +298,7 @@ try {
 
         .card .details h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color:rgb(55, 122, 57);  /* Replaced #1e3a8a with color scheme */
         }
 
         .stats-grid {
@@ -271,7 +308,7 @@ try {
         }
 
         .stat-box {
-            background: #fff;
+            background: #E8F5E9; /* Applied background color from color scheme */
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
@@ -286,7 +323,7 @@ try {
         .stat-box h3 {
             font-size: 20px;
             margin-bottom: 15px;
-            color: #1e3a8a;
+            color: #4CAF50; /* Replaced #1e3a8a with color scheme */
             display: flex;
             align-items: center;
             gap: 10px;
@@ -374,7 +411,7 @@ try {
             left: 50%;
             transform: translateX(-50%);
             font-size: 20px;
-            color: #1e3a8a;
+            color: #4CAF50; /* Replaced #1e3a8a with color scheme */
             font-weight: bold;
         }
 
@@ -390,19 +427,20 @@ try {
 
         .download-btn {
             display: block;
-            background: #4f46e5;
+            background: #4CAF50; /* Updated to match color scheme */
             color: #fff;
             text-align: center;
             padding: 15px;
             border-radius: 15px;
             text-decoration: none;
-            margin-top: 30px;
-            font-size: 16px;
+            margin-top: 27px;
+            font-size: 20px;
+            font-weight: bold;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
         .download-btn:hover {
-            background: #7c3aed;
+            background: #388E3C; /* Updated hover color to match color scheme */
         }
 
         .error-message {
@@ -565,7 +603,7 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
@@ -573,7 +611,6 @@ try {
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
             <a href="history.php" title="History"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -715,8 +752,8 @@ try {
                 datasets: [{
                     label: 'CO₂ Offset (kg)',
                     data: monthlyData,
-                    borderColor: '#4f46e5',
-                    backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                    borderColor: '#4CAF50', /* Updated to match color scheme */
+                    backgroundColor: 'rgba(76, 175, 80, 0.2)', /* Updated to match color scheme */
                     fill: true,
                     tension: 0.4
                 }]

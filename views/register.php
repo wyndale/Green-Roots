@@ -77,6 +77,27 @@
                                 'barangay_id' => $barangay_id
                             ]);
 
+                            // Get the newly inserted user_id
+                            $user_id = $pdo->lastInsertId();
+
+                            // Fetch the default profile picture asset_id
+                            $stmt = $pdo->prepare("SELECT asset_id FROM assets WHERE asset_type = 'default_profile' LIMIT 1");
+                            $stmt->execute();
+                            $default_profile_asset_id = $stmt->fetchColumn();
+
+                            if ($default_profile_asset_id) {
+                                // Update the newly created user with the default profile picture asset_id
+                                $stmt = $pdo->prepare("UPDATE users SET default_profile_asset_id = :asset_id WHERE user_id = :user_id");
+                                $stmt->execute([
+                                    'asset_id' => $default_profile_asset_id,
+                                    'user_id' => $user_id
+                                ]);
+                            } else {
+                                // Log an error or notify admin that default profile picture is missing
+                                error_log("Default profile picture not found in assets table during registration for user_id: $user_id");
+                                // Optionally, you can set a default value or take other actions
+                            }
+
                             $success = 'Registration successful! You can now <a href="login.php">login</a>.';
                         }
                     }
@@ -86,7 +107,7 @@
             }
         }
     }
-    ?>
+?>
 
 <!DOCTYPE html>
 <html lang="en">
@@ -95,7 +116,349 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Green Roots - Register</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../assets/css/register.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            background: #E8F5E9; /* Matching login.php background */
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 16px; /* Reduced from 20px by 4px */
+        }
+
+        .register-container {
+            background: #fff;
+            padding: 36px; /* Reduced from 40px by 4px */
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px; /* Increased from 400px to 500px */
+            text-align: center;
+        }
+
+        .register-container h2 {
+            font-size: 25px; /* Reduced from 32px by 4px */
+            color: #4CAF50;
+            margin-bottom: 6px; /* Reduced from 10px by 4px */
+        }
+
+        .register-container .subtitle {
+            font-size: 14px; /* Reduced from 16px by 4px */
+            color: #666;
+            margin-bottom: 26px; /* Reduced from 30px by 4px */
+        }
+
+        .register-container .error {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 6px; /* Reduced from 10px by 4px */
+            border-radius: 5px;
+            margin-bottom: 21px; /* Reduced from 25px by 4px */
+            text-align: center;
+            display: none;
+        }
+
+        .register-container .success {
+            background: #d1fae5;
+            color: #10b981;
+            padding: 6px; /* Reduced from 10px by 4px */
+            border-radius: 5px;
+            margin-bottom: 21px; /* Reduced from 25px by 4px */
+            text-align: center;
+            display: none;
+        }
+
+        .register-container .error.show,
+        .register-container .success.show {
+            display: block;
+        }
+
+        .register-container .form-group {
+            margin-bottom: 26px; /* Reduced from 30px by 4px */
+            position: relative;
+            text-align: left;
+        }
+
+        .register-container .name-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 17px; /* Reduced from 30px by 4px */
+        }
+
+        .register-container .name-group .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        .register-container .input-wrapper {
+            position: relative;
+        }
+
+        .register-container .input-wrapper i {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+            font-size: 12px; /* Reduced from 16px by 4px */
+            z-index: 1; /* Ensure icon stays above the input background */
+        }
+
+        .register-container input[type="text"],
+        .register-container input[type="email"],
+        .register-container input[type="password"] {
+            width: 100%;
+            padding: 7px 7px 7px 31px; /* Reduced from 10px to 6px, adjusted for icon */
+            border: 1px solid #dadce0; /* Google's border color */
+            border-radius: 4px; /* Slightly rounded corners like Google */
+            font-size: 13px; /* Reduced from 16px by 4px */
+            outline: none;
+            background: transparent;
+            transition: border-color 0.3s;
+            position: relative;
+            z-index: 0; /* Ensure input stays below the label */
+        }
+
+        .register-container .input-wrapper label {
+            position: absolute;
+            left: 31px; /* Adjusted for icon */
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 13px; /* Reduced from 14px by 4px */
+            color: #666;
+            letter-spacing: 0.4px;
+            background: #fff; /* Background to cover the border when label moves up */
+            padding: 0 5px;
+            pointer-events: none; /* Prevent label from interfering with input */
+            transition: all 0.2s ease;
+            z-index: 1; /* Ensure label stays above the input */
+        }
+
+        .register-container .input-wrapper input:focus,
+        .register-container .input-wrapper input:not(:placeholder-shown) {
+            border-color: #4CAF50; /* Matching focus color */
+        }
+
+        .register-container .input-wrapper input:focus + label,
+        .register-container .input-wrapper input:not(:placeholder-shown) + label {
+            top: 0;
+            transform: translateY(-50%);
+            font-size: 11px; /* Reduced from 13px by 2px */
+            color: #4CAF50; /* Matching focus color for label */
+        }
+
+        .register-container select {
+            width: 100%;
+            padding: 6px; /* Reduced from 10px by 4px */
+            border: 1px solid #dadce0; /* Google's border color */
+            border-radius: 4px; /* Slightly rounded corners like Google */
+            font-size: 13px; /* Reduced from 16px by 4px */
+            outline: none;
+            background: transparent;
+            appearance: none;
+            background: url('data:image/svg+xml;utf8,<svg fill="%23999" height="20" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 6px center; /* Adjusted size and position */
+            background-size: 12px; /* Reduced from 16px by 4px */
+            transition: border-color 0.3s;
+        }
+
+        .register-container select:focus {
+            border-color: #4CAF50; /* Matching focus color */
+        }
+
+        .register-container input[type="submit"] {
+            background: #4CAF50;
+            color: #fff;
+            padding: 10px; /* Reduced from 12px by 4px */
+            border: none;
+            border-radius: 21px; /* Reduced from 25px by 4px */
+            width: 70%;
+            font-size: 14px; /* Reduced from 16px by 4px */
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s, background 0.3s;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .register-container input[type="submit"]:hover {
+            background: #388E3C;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4);
+        }
+
+        .register-container .links {
+            text-align: center;
+            margin-top: 20px; /* Reduced from 15px by 4px */
+        }
+
+        .register-container .links p {
+            font-size: 12px; /* Reduced from 14px by 4px */
+            color: #666;
+            margin-bottom: 6px; /* Reduced from 10px by 4px */
+        }
+
+        .register-container .links a {
+            color: #4CAF50;
+            text-decoration: none;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+
+        .register-container .links a:hover {
+            color: #388E3C;
+        }
+
+        .register-container .success a {
+            color: #030a03;
+            text-decoration: none;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+
+        .register-container .success a:hover {
+            color: #388E3C;
+        }
+
+        /* Mobile Responsive Design */
+        @media (max-width: 768px) {
+            body {
+                padding: 11px; /* Reduced from 15px by 4px */
+            }
+
+            .register-container {
+                padding: 21px; /* Reduced from 25px by 4px */
+                max-width: 90%;
+            }
+
+            .register-container h2 {
+                font-size: 22px; /* Reduced from 26px by 4px */
+                margin-bottom: 4px; /* Reduced from 8px by 4px */
+            }
+
+            .register-container .subtitle {
+                font-size: 10px; /* Reduced from 14px by 4px */
+                margin-bottom: 21px; /* Reduced from 25px by 4px */
+            }
+
+            .register-container .error,
+            .register-container .success {
+                margin-bottom: 16px; /* Reduced from 20px by 4px */
+                font-size: 9px; /* Reduced from 13px by 4px */
+                padding: 4px; /* Reduced from 8px by 4px */
+            }
+
+            .register-container .form-group,
+            .register-container .name-group {
+                margin-bottom: 21px; /* Reduced from 25px by 4px */
+            }
+
+            .register-container .name-group {
+                flex-direction: column;
+                gap: 21px; /* Reduced from 25px by 4px */
+            }
+
+            .register-container .input-wrapper label {
+                font-size: 10px; /* Reduced from 13px by 4px */
+                left: 26px; /* Adjusted for icon */
+            }
+
+            .register-container input[type="text"],
+            .register-container input[type="email"],
+            .register-container input[type="password"],
+            .register-container select {
+                font-size: 10px; /* Reduced from 14px by 4px */
+                padding: 4px 4px 4px 26px; /* Reduced padding, adjusted for icon */
+            }
+
+            .register-container select {
+                padding: 4px; /* Reduced from 8px by 4px */
+                background-size: 10px; /* Reduced from 14px by 4px */
+            }
+
+            .register-container .input-wrapper i {
+                font-size: 10px; /* Reduced from 14px by 4px */
+                left: 4px; /* Reduced from 8px by 4px */
+            }
+
+            .register-container .input-wrapper input:focus + label,
+            .register-container .input-wrapper input:not(:placeholder-shown) + label {
+                font-size: 8px; /* Reduced from 10px by 2px */
+            }
+
+            .register-container input[type="submit"] {
+                font-size: 10px; /* Reduced from 14px by 4px */
+                padding: 6px; /* Reduced from 10px by 4px */
+            }
+
+            .register-container .links p,
+            .register-container .links a {
+                font-size: 9px; /* Reduced from 13px by 4px */
+            }
+        }
+
+        @media (max-width: 480px) {
+            .register-container {
+                padding: 16px; /* Reduced from 20px by 4px */
+            }
+
+            .register-container h2 {
+                font-size: 18px; /* Reduced from 22px by 4px */
+            }
+
+            .register-container .subtitle {
+                font-size: 9px; /* Reduced from 13px by 4px */
+            }
+
+            .register-container .error,
+            .register-container .success {
+                font-size: 8px; /* Reduced from 12px by 4px */
+            }
+
+            .register-container .input-wrapper label {
+                font-size: 9px; /* Reduced from 12px by 4px */
+                left: 22px; /* Adjusted for icon */
+            }
+
+            .register-container input[type="text"],
+            .register-container input[type="email"],
+            .register-container input[type="password"],
+            .register-container select {
+                font-size: 9px; /* Reduced from 13px by 4px */
+                padding: 3px 3px 3px 22px; /* Reduced padding, adjusted for icon */
+            }
+
+            .register-container select {
+                padding: 3px; /* Reduced from 7px by 4px */
+                background-size: 8px; /* Reduced from 12px by 4px */
+            }
+
+            .register-container .input-wrapper i {
+                font-size: 9px; /* Reduced from 13px by 4px */
+            }
+
+            .register-container .input-wrapper input:focus + label,
+            .register-container .input-wrapper input:not(:placeholder-shown) + label {
+                font-size: 7px; /* Reduced from 9px by 2px */
+            }
+
+            .register-container input[type="submit"] {
+                font-size: 9px; /* Reduced from 13px by 4px */
+                padding: 4px; /* Reduced from 8px by 4px */
+            }
+
+            .register-container .links p,
+            .register-container .links a {
+                font-size: 8px; /* Reduced from 12px by 4px */
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="register-container">
@@ -111,50 +474,49 @@
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <div class="name-group">
                 <div class="form-group">
-                    <label for="first_name">First Name</label>
                     <div class="input-wrapper">
                         <i class="fas fa-user"></i>
-                        <input type="text" id="first_name" name="first_name" placeholder="Enter your first name" required>
+                        <input type="text" id="first_name" name="first_name" placeholder=" " required>
+                        <label for="first_name">Enter your first name</label>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="last_name">Last Name</label>
                     <div class="input-wrapper">
                         <i class="fas fa-user"></i>
-                        <input type="text" id="last_name" name="last_name" placeholder="Enter your last name" required>
+                        <input type="text" id="last_name" name="last_name" placeholder=" " required>
+                        <label for="last_name">Enter your last name</label>
                     </div>
                 </div>
             </div>
             <div class="form-group">
-                <label for="username">Username</label>
                 <div class="input-wrapper">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="username" name="username" placeholder="Enter your username" required>
+                    <input type="text" id="username" name="username" placeholder=" " required>
+                    <label for="username">Enter your username</label>
                 </div>
             </div>
             <div class="form-group">
-                <label for="email">Email</label>
                 <div class="input-wrapper">
                     <i class="fas fa-envelope"></i>
-                    <input type="email" id="email" name="email" placeholder="Enter your email" required>
+                    <input type="email" id="email" name="email" placeholder=" " required>
+                    <label for="email">Enter your email</label>
                 </div>
             </div>
             <div class="form-group">
-                <label for="password">Password</label>
                 <div class="input-wrapper">
                     <i class="fas fa-lock"></i>
-                    <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                    <input type="password" id="password" name="password" placeholder=" " required>
+                    <label for="password">Enter your password</label>
                 </div>
             </div>
             <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
                 <div class="input-wrapper">
                     <i class="fas fa-lock"></i>
-                    <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm your password" required>
+                    <input type="password" id="confirm_password" name="confirm_password" placeholder=" " required>
+                    <label for="confirm_password">Confirm your password</label>
                 </div>
             </div>
             <div class="form-group">
-                <label for="barangay_id">Select Barangay</label>
                 <select id="barangay_id" name="barangay_id" required>
                     <option value="">Select Location</option>
                 </select>
