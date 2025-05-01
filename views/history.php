@@ -18,24 +18,26 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'planting';
 $page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
 $offset = ($page - 1) * $entries_per_page;
 
+// Date filters
+$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : '';
+$end_date = isset($_GET['end_date']) ? $_GET['end_date'] : '';
+
 // Initialize arrays to store history data
 $planting_history = [];
 $reward_history = [];
 $event_history = [];
-$activity_history = [];
 
 // Total counts for pagination
 $planting_total = 0;
 $reward_total = 0;
 $event_total = 0;
-$activity_total = 0;
 
 try {
-    // Fetch user data
+    // Fetch user data including profile picture
     $stmt = $pdo->prepare("
-        SELECT user_id, username, email, profile_picture 
-        FROM users 
-        WHERE user_id = :user_id
+        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id 
+        FROM users u 
+        WHERE u.user_id = :user_id
     ");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -46,87 +48,235 @@ try {
         exit;
     }
 
-    // Convert profile picture to base64 for display
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+    // Fetch profile picture (custom or default)
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = 'image/jpeg'; // Default
+            if ($asset['asset_type'] === 'default_profile') {
+                $mime_type = 'image/png';
+            } else {
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime_type = finfo_buffer($finfo, $asset['asset_data']);
+                finfo_close($finfo);
+            }
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
 
-    // Fetch Planting History with Pagination
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM submissions WHERE user_id = :user_id");
-    $stmt->execute(['user_id' => $user_id]);
-    $planting_total = $stmt->fetchColumn();
-    $planting_pages = ceil($planting_total / $entries_per_page);
-
-    $stmt = $pdo->prepare("
-        SELECT s.submission_id, s.trees_planted, s.submitted_at, s.status, b.name as barangay_name 
-        FROM submissions s 
-        JOIN barangays b ON s.barangay_id = b.barangay_id 
-        WHERE s.user_id = :user_id 
-        ORDER BY s.submitted_at DESC
-        LIMIT :limit OFFSET :offset
-    ");
-    $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
-    $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    // Fetch logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
     $stmt->execute();
-    $planting_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $logo_data = $stmt->fetchColumn();
+    $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
-    // Fetch Reward History with Pagination
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM user_rewards WHERE user_id = :user_id");
-    $stmt->execute(['user_id' => $user_id]);
-    $reward_total = $stmt->fetchColumn();
-    $reward_pages = ceil($reward_total / $entries_per_page);
+    // Helper function to parse planting submission description
+    function parsePlantingDescription($description) {
+        // Example description: "Submitted 5 trees in Barangay 1"
+        $pattern = '/Submitted (\d+) trees in (.*)/';
+        if (preg_match($pattern, $description, $matches)) {
+            return [
+                'trees_planted' => (int)$matches[1],
+                'barangay_name' => $matches[2],
+                'status' => 'Approved' // Assuming activities are logged only after approval
+            ];
+        }
+        return [
+            'trees_planted' => 0,
+            'barangay_name' => 'Unknown',
+            'status' => 'Unknown'
+        ];
+    }
 
-    $stmt = $pdo->prepare("
-        SELECT ur.user_reward_id, ur.claimed_at, r.reward_type, r.description, r.eco_points_required, r.cash_value, r.voucher_details 
-        FROM user_rewards ur 
-        JOIN rewards r ON ur.reward_id = r.reward_id 
-        WHERE ur.user_id = :user_id 
-        ORDER BY ur.claimed_at DESC
-        LIMIT :limit OFFSET :offset
-    ");
-    $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
-    $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-    $reward_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Helper function to parse reward description
+    function parseRewardDescription($description) {
+        // Example description: "Claimed a cash reward of ₱100 (100 eco points)"
+        // or "Claimed a voucher reward: 10% off at Store (50 eco points)"
+        $pattern_cash = '/Claimed a cash reward of ₱([\d.]+) \((\d+) eco points\)/';
+        $pattern_voucher = '/Claimed a voucher reward: (.*?) \((\d+) eco points\)/';
+        
+        if (preg_match($pattern_cash, $description, $matches)) {
+            return [
+                'reward_type' => 'cash',
+                'description' => "Cash Reward",
+                'cash_value' => (float)$matches[1],
+                'eco_points_required' => (int)$matches[2],
+                'voucher_details' => null
+            ];
+        } elseif (preg_match($pattern_voucher, $description, $matches)) {
+            return [
+                'reward_type' => 'voucher',
+                'description' => $matches[1],
+                'cash_value' => null,
+                'eco_points_required' => (int)$matches[2],
+                'voucher_details' => $matches[1]
+            ];
+        }
+        return [
+            'reward_type' => 'unknown',
+            'description' => $description,
+            'cash_value' => null,
+            'eco_points_required' => 0,
+            'voucher_details' => null
+        ];
+    }
 
-    // Fetch Event History with Pagination
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM event_participants WHERE user_id = :user_id");
-    $stmt->execute(['user_id' => $user_id]);
-    $event_total = $stmt->fetchColumn();
-    $event_pages = ceil($event_total / $entries_per_page);
+    // Fetch Planting History with Pagination and Date Filters
+    if ($active_tab === 'planting') {
+        $query = "SELECT COUNT(*) FROM activities WHERE user_id = :user_id AND activity_type = 'submission'";
+        $params = ['user_id' => $user_id];
+        if ($start_date) {
+            $query .= " AND created_at >= :start_date";
+            $params['start_date'] = $start_date . ' 00:00:00';
+        }
+        if ($end_date) {
+            $query .= " AND created_at <= :end_date";
+            $params['end_date'] = $end_date . ' 23:59:59';
+        }
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
+        $planting_total = $stmt->fetchColumn();
+        $planting_pages = ceil($planting_total / $entries_per_page);
 
-    $stmt = $pdo->prepare("
-        SELECT e.event_id, e.title, e.event_date, e.location, ep.joined_at 
-        FROM event_participants ep 
-        JOIN events e ON ep.event_id = e.event_id 
-        WHERE ep.user_id = :user_id 
-        ORDER BY ep.joined_at DESC
-        LIMIT :limit OFFSET :offset
-    ");
-    $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
-    $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-    $event_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $query = "
+            SELECT activity_id, description, created_at 
+            FROM activities 
+            WHERE user_id = :user_id AND activity_type = 'submission'
+        ";
+        if ($start_date) {
+            $query .= " AND created_at >= :start_date";
+        }
+        if ($end_date) {
+            $query .= " AND created_at <= :end_date";
+        }
+        $query .= " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+        $stmt = $pdo->prepare($query);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":$key", $value);
+        }
+        $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $raw_planting_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch Activity History with Pagination
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM activities WHERE user_id = :user_id");
-    $stmt->execute(['user_id' => $user_id]);
-    $activity_total = $stmt->fetchColumn();
-    $activity_pages = ceil($activity_total / $entries_per_page);
+        // Parse the description for each entry
+        foreach ($raw_planting_history as $entry) {
+            $parsed = parsePlantingDescription($entry['description']);
+            $planting_history[] = [
+                'activity_id' => $entry['activity_id'],
+                'trees_planted' => $parsed['trees_planted'],
+                'barangay_name' => $parsed['barangay_name'],
+                'status' => $parsed['status'],
+                'submitted_at' => $entry['created_at']
+            ];
+        }
+    }
 
-    $stmt = $pdo->prepare("
-        SELECT activity_id, description, activity_type, created_at 
-        FROM activities 
-        WHERE user_id = :user_id 
-        ORDER BY created_at DESC
-        LIMIT :limit OFFSET :offset
-    ");
-    $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
-    $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-    $activity_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Fetch Reward History with Pagination and Date Filters
+    if ($active_tab === 'reward') {
+        $query = "SELECT COUNT(*) FROM activities WHERE user_id = :user_id AND activity_type = 'reward'";
+        $params = ['user_id' => $user_id];
+        if ($start_date) {
+            $query .= " AND created_at >= :start_date";
+            $params['start_date'] = $start_date . ' 00:00:00';
+        }
+        if ($end_date) {
+            $query .= " AND created_at <= :end_date";
+            $params['end_date'] = $end_date . ' 23:59:59';
+        }
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
+        $reward_total = $stmt->fetchColumn();
+        $reward_pages = ceil($reward_total / $entries_per_page);
+
+        $query = "
+            SELECT activity_id, description, created_at 
+            FROM activities 
+            WHERE user_id = :user_id AND activity_type = 'reward'
+        ";
+        if ($start_date) {
+            $query .= " AND created_at >= :start_date";
+        }
+        if ($end_date) {
+            $query .= " AND created_at <= :end_date";
+        }
+        $query .= " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+        $stmt = $pdo->prepare($query);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":$key", $value);
+        }
+        $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $raw_reward_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Parse the description for each entry
+        foreach ($raw_reward_history as $entry) {
+            $parsed = parseRewardDescription($entry['description']);
+            $reward_history[] = [
+                'activity_id' => $entry['activity_id'],
+                'reward_type' => $parsed['reward_type'],
+                'description' => $parsed['description'],
+                'cash_value' => $parsed['cash_value'],
+                'eco_points_required' => $parsed['eco_points_required'],
+                'voucher_details' => $parsed['voucher_details'],
+                'claimed_at' => $entry['created_at']
+            ];
+        }
+    }
+
+    // Fetch Event History with Pagination and Date Filters
+    if ($active_tab === 'event') {
+        $query = "SELECT COUNT(*) FROM activities WHERE user_id = :user_id AND activity_type = 'event'";
+        $params = ['user_id' => $user_id];
+        if ($start_date) {
+            $query .= " AND created_at >= :start_date";
+            $params['start_date'] = $start_date . ' 00:00:00';
+        }
+        if ($end_date) {
+            $query .= " AND created_at <= :end_date";
+            $params['end_date'] = $end_date . ' 23:59:59';
+        }
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
+        $event_total = $stmt->fetchColumn();
+        $event_pages = ceil($event_total / $entries_per_page);
+
+        // Since the description contains the event ID (e.g., "Joined event with ID 6"),
+        // we'll need to join with the events table to get event details
+        $query = "
+            SELECT a.activity_id, a.description, a.created_at, 
+                   e.event_id, e.title, e.event_date, e.location, ep.confirmed_at 
+            FROM activities a 
+            LEFT JOIN event_participants ep ON ep.user_id = a.user_id AND ep.event_id = CAST(SUBSTRING_INDEX(a.description, ' ', -1) AS UNSIGNED)
+            LEFT JOIN events e ON e.event_id = CAST(SUBSTRING_INDEX(a.description, ' ', -1) AS UNSIGNED)
+            WHERE a.user_id = :user_id AND a.activity_type = 'event'
+        ";
+        if ($start_date) {
+            $query .= " AND a.created_at >= :start_date";
+        }
+        if ($end_date) {
+            $query .= " AND a.created_at <= :end_date";
+        }
+        $query .= " ORDER BY a.created_at DESC LIMIT :limit OFFSET :offset";
+        $stmt = $pdo->prepare($query);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":$key", $value);
+        }
+        $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $event_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
@@ -137,7 +287,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>History - Tree Planting Initiative</title>
+    <title>History - Green Roots</title>
     <link rel="icon" type="image/png" href="../assets/favicon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -149,7 +299,7 @@ try {
         }
 
         body {
-            background: #f5f7fa;
+            background: #E8F5E9;
             color: #333;
             overflow-x: hidden;
         }
@@ -164,7 +314,7 @@ try {
         .sidebar {
             width: 80px;
             background: #fff;
-            padding: 20px 0;
+            padding: 17px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -172,26 +322,25 @@ try {
             box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
             position: fixed;
             top: 0;
-            left: 0;
-            height: 100vh;
-            z-index: 100;
+            bottom: 0;
         }
 
         .sidebar img.logo {
-            width: 50px;
-            margin-bottom: 40px;
+            width: 70px;
+            margin-bottom: 20px;
         }
 
         .sidebar a {
-            margin: 20px 0;
+            margin: 18px 0;
             color: #666;
             text-decoration: none;
             font-size: 24px;
             transition: color 0.3s;
         }
 
-        .sidebar a:hover {
-            color: #4f46e5;
+        .sidebar a:hover,
+        .sidebar a.active {
+            color: #4CAF50;
         }
 
         .main-content {
@@ -200,7 +349,7 @@ try {
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px; /* Match sidebar width */
+            margin-left: 80px;
         }
 
         .header {
@@ -214,7 +363,7 @@ try {
 
         .header h1 {
             font-size: 36px;
-            color: #1e3a8a;
+            color: #4CAF50;
         }
 
         .header .search-bar {
@@ -262,7 +411,7 @@ try {
         }
 
         .header .search-bar .search-results a:hover {
-            background: #e0e7ff;
+            background: #E8F5E9;
         }
 
         .header .profile {
@@ -319,7 +468,7 @@ try {
         }
 
         .profile-dropdown a:hover {
-            background: #e0e7ff;
+            background: #E8F5E9;
         }
 
         .history-nav {
@@ -345,29 +494,29 @@ try {
 
         .history-nav a.active {
             color: #fff;
-            background: #4f46e5;
+            background: #4CAF50;
         }
 
         .history-nav a:hover {
-            color: #4f46e5;
+            color: #4CAF50;
         }
 
         .history-section {
-            background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
+            background: #fff;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
             max-width: 800px;
             margin-bottom: 30px;
-            height: 650px; /* Fixed height to fit 10 entries */
+            height: 650px;
             display: flex;
             flex-direction: column;
         }
 
         .history-section h2 {
             font-size: 28px;
-            color: #1e3a8a;
+            color: #4CAF50;
             margin-bottom: 25px;
         }
 
@@ -394,7 +543,7 @@ try {
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 20px;
             padding-right: 10px;
         }
 
@@ -408,33 +557,42 @@ try {
         }
 
         .history-list::-webkit-scrollbar-thumb {
-            background: #4f46e5;
+            background: #4CAF50;
             border-radius: 10px;
         }
 
         .history-list::-webkit-scrollbar-thumb:hover {
-            background: #7c3aed;
+            background: #388E3C;
         }
 
         .history-card {
             background: #fff;
-            padding: 15px;
+            padding: 20px;
             border-radius: 15px;
             box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
             display: flex;
             flex-direction: column;
-            gap: 5px;
-            min-height: 120px; /* Adjusted to fit 10 entries in 650px */
+            gap: 15px;
+            border-left: 5px solid #4CAF50;
         }
 
-        .history-card p {
-            font-size: 14px;
+        .history-details {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .history-detail-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 15px;
             color: #333;
-            margin: 2px 0;
+            line-height: 1.6;
         }
 
-        .history-card p strong {
-            color: #1e3a8a;
+        .history-detail-item i {
+            color: #4CAF50;
         }
 
         .status-pending {
@@ -449,6 +607,11 @@ try {
 
         .status-rejected {
             color: #dc2626;
+            font-weight: bold;
+        }
+
+        .status-confirmed {
+            color: #10b981;
             font-weight: bold;
         }
 
@@ -470,7 +633,7 @@ try {
         .pagination a {
             padding: 8px 12px;
             background: #fff;
-            color: #4f46e5;
+            color: #4CAF50;
             text-decoration: none;
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
@@ -478,7 +641,7 @@ try {
         }
 
         .pagination a:hover {
-            background: #e0e7ff;
+            background: #E8F5E9;
         }
 
         .pagination a.disabled {
@@ -488,7 +651,7 @@ try {
         }
 
         .pagination a.active {
-            background: #4f46e5;
+            background: #4CAF50;
             color: #fff;
         }
 
@@ -516,9 +679,8 @@ try {
                 flex-direction: row;
                 justify-content: space-around;
                 position: fixed;
-                bottom: 0;
                 top: auto;
-                height: auto;
+                bottom: 0;
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
@@ -529,8 +691,8 @@ try {
             }
 
             .sidebar a {
-                margin: 0 15px;
-                font-size: 20px;
+                margin: 0 10px;
+                font-size: 18px;
             }
 
             .main-content {
@@ -598,13 +760,13 @@ try {
             }
 
             .history-nav a.active {
-                background: #4f46e5;
+                background: #4CAF50;
                 color: #fff;
             }
 
             .history-section {
                 padding: 20px;
-                height: 500px; /* Adjusted for mobile */
+                height: 500px;
             }
 
             .history-section h2 {
@@ -621,12 +783,12 @@ try {
             }
 
             .history-card {
-                padding: 10px;
-                min-height: 100px;
+                padding: 15px;
+                gap: 10px;
             }
 
-            .history-card p {
-                font-size: 12px;
+            .history-detail-item {
+                font-size: 13px;
             }
 
             .no-data {
@@ -647,15 +809,15 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="logo.png" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Green Roots Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
+            <a href="history.php" title="History" class="active"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
-            <a href="logout.php" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -664,12 +826,12 @@ try {
             <div class="header">
                 <h1>History</h1>
                 <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
+                    <input type="text" placeholder="Search functionalities..." id="searchInput" aria-label="Search functionalities">
                     <div class="search-results" id="searchResults"></div>
                 </div>
-                <div class="profile" id="profileBtn">
+                <div class="profile" id="profileBtn" tabindex="0" role="button" aria-label="Profile menu">
                     <span><?php echo htmlspecialchars($username); ?></span>
-                    <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
+                    <img src="<?php echo $profile_picture_data; ?>" alt="Profile Picture">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
                         <a href="account_settings.php">Account</a>
@@ -681,25 +843,23 @@ try {
                 <a href="?tab=planting" class="<?php echo $active_tab === 'planting' ? 'active' : ''; ?>">Planting History</a>
                 <a href="?tab=reward" class="<?php echo $active_tab === 'reward' ? 'active' : ''; ?>">Reward History</a>
                 <a href="?tab=event" class="<?php echo $active_tab === 'event' ? 'active' : ''; ?>">Event History</a>
-                <a href="?tab=activity" class="<?php echo $active_tab === 'activity' ? 'active' : ''; ?>">Activity History</a>
             </div>
             <div class="history-section">
                 <h2>
                     <?php
                         if ($active_tab === 'planting') echo 'Planting History';
                         elseif ($active_tab === 'reward') echo 'Reward History';
-                        elseif ($active_tab === 'event') echo 'Event History';
-                        else echo 'Activity History';
+                        else echo 'Event History';
                     ?>
                 </h2>
                 <div class="filter-bar">
                     <div>
                         <label for="start_date">From:</label>
-                        <input type="date" id="start_date" name="start_date">
+                        <input type="date" id="start_date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>">
                     </div>
                     <div>
                         <label for="end_date">To:</label>
-                        <input type="date" id="end_date" name="end_date">
+                        <input type="date" id="end_date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>">
                     </div>
                 </div>
                 <div class="history-list">
@@ -709,10 +869,24 @@ try {
                         <?php else: ?>
                             <?php foreach ($planting_history as $entry): ?>
                                 <div class="history-card">
-                                    <p><strong>Date:</strong> <?php echo date('F j, Y, g:i A', strtotime($entry['submitted_at'])); ?></p>
-                                    <p><strong>Trees Planted:</strong> <?php echo $entry['trees_planted']; ?></p>
-                                    <p><strong>Location:</strong> <?php echo htmlspecialchars($entry['barangay_name']); ?></p>
-                                    <p><strong>Status:</strong> <span class="status-<?php echo strtolower($entry['status']); ?>"><?php echo $entry['status']; ?></span></p>
+                                    <div class="history-details">
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-alt"></i>
+                                            <span><?php echo date('F j, Y, g:i A', strtotime($entry['submitted_at'])); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-tree"></i>
+                                            <span>Trees Planted: <?php echo $entry['trees_planted']; ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            <span><?php echo htmlspecialchars($entry['barangay_name']); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span>Status: <span class="status-<?php echo strtolower($entry['status']); ?>" title="Status: <?php echo $entry['status']; ?>"><?php echo $entry['status']; ?></span></span>
+                                        </div>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -722,40 +896,69 @@ try {
                         <?php else: ?>
                             <?php foreach ($reward_history as $entry): ?>
                                 <div class="history-card">
-                                    <p><strong>Date:</strong> <?php echo date('F j, Y, g:i A', strtotime($entry['claimed_at'])); ?></p>
-                                    <p><strong>Reward Type:</strong> <?php echo $entry['reward_type']; ?></p>
-                                    <p><strong>Description:</strong> <?php echo htmlspecialchars($entry['description']); ?></p>
-                                    <p><strong>Eco Points Used:</strong> <?php echo $entry['eco_points_required']; ?></p>
-                                    <?php if ($entry['reward_type'] === 'cash'): ?>
-                                        <p><strong>Cash Value:</strong> ₱<?php echo number_format($entry['cash_value'], 2); ?></p>
-                                    <?php else: ?>
-                                        <p><strong>Voucher Details:</strong> <?php echo htmlspecialchars($entry['voucher_details'] ?? 'N/A'); ?></p>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    <?php elseif ($active_tab === 'event'): ?>
-                        <?php if (empty($event_history)): ?>
-                            <p class="no-data">No event history available.</p>
-                        <?php else: ?>
-                            <?php foreach ($event_history as $entry): ?>
-                                <div class="history-card">
-                                    <p><strong>Date:</strong> <?php echo date('F j, Y, g:i A', strtotime($entry['joined_at'])); ?></p>
-                                    <p><strong>Event:</strong> <?php echo htmlspecialchars($entry['title']); ?></p>
-                                    <p><strong>Event Date:</strong> <?php echo date('F j, Y', strtotime($entry['event_date'])); ?></p>
-                                    <p><strong>Location:</strong> <?php echo htmlspecialchars($entry['location']); ?></p>
+                                    <div class="history-details">
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-alt"></i>
+                                            <span><?php echo date('F j, Y, g:i A', strtotime($entry['claimed_at'])); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-gift"></i>
+                                            <span>Reward Type: <?php echo ucfirst($entry['reward_type']); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span><?php echo htmlspecialchars($entry['description']); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-coins"></i>
+                                            <span>Eco Points Used: <?php echo $entry['eco_points_required']; ?></span>
+                                        </div>
+                                        <?php if ($entry['reward_type'] === 'cash'): ?>
+                                            <div class="history-detail-item">
+                                                <i class="fas fa-money-bill-wave"></i>
+                                                <span>Cash Value: ₱<?php echo number_format($entry['cash_value'], 2); ?></span>
+                                            </div>
+                                        <?php elseif ($entry['reward_type'] === 'voucher'): ?>
+                                            <div class="history-detail-item">
+                                                <i class="fas fa-ticket-alt"></i>
+                                                <span>Voucher Details: <?php echo htmlspecialchars($entry['voucher_details'] ?? 'N/A'); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     <?php else: ?>
-                        <?php if (empty($activity_history)): ?>
-                            <p class="no-data">No activity history available.</p>
+                        <?php if (empty($event_history)): ?>
+                            <p class="no-data">No event history available.</p>
                         <?php else: ?>
-                            <?php foreach ($activity_history as $entry): ?>
+                            <?php foreach ($event_history as $entry): ?>
+                                <?php if (!$entry['event_id']) continue; // Skip if event details couldn't be fetched ?>
                                 <div class="history-card">
-                                    <p><strong>Date:</strong> <?php echo date('F j, Y, g:i A', strtotime($entry['created_at'])); ?></p>
-                                    <p><strong>Type:</strong> <?php echo ucfirst($entry['activity_type']); ?></p>
-                                    <p><strong>Description:</strong> <?php echo htmlspecialchars($entry['description']); ?></p>
+                                    <div class="history-details">
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-alt"></i>
+                                            <span>Joined At: <?php echo date('F j, Y, g:i A', strtotime($entry['created_at'])); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-check"></i>
+                                            <span>Event: <?php echo htmlspecialchars($entry['title']); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-day"></i>
+                                            <span>Event Date: <?php echo date('F j, Y', strtotime($entry['event_date'])); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            <span>Location: <?php echo htmlspecialchars($entry['location']); ?></span>
+                                        </div>
+                                        <?php if ($entry['confirmed_at']): ?>
+                                            <div class="history-detail-item">
+                                                <i class="fas fa-check-circle"></i>
+                                                <span class="status-confirmed">Confirmed At: <?php echo date('F j, Y, g:i A', strtotime($entry['confirmed_at'])); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -766,19 +969,23 @@ try {
                         $total_pages = 0;
                         if ($active_tab === 'planting') $total_pages = $planting_pages;
                         elseif ($active_tab === 'reward') $total_pages = $reward_pages;
-                        elseif ($active_tab === 'event') $total_pages = $event_pages;
-                        else $total_pages = $activity_pages;
+                        else $total_pages = $event_pages;
 
                         $prev_page = $page - 1;
                         $next_page = $page + 1;
+                        $query_params = http_build_query([
+                            'tab' => $active_tab,
+                            'start_date' => $start_date,
+                            'end_date' => $end_date
+                        ]);
                     ?>
-                    <a href="?tab=<?php echo $active_tab; ?>&page=1" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>">First</a>
-                    <a href="?tab=<?php echo $active_tab; ?>&page=<?php echo $prev_page; ?>" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>">Prev</a>
+                    <a href="?<?php echo $query_params; ?>&page=1" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>" aria-label="First page">First</a>
+                    <a href="?<?php echo $query_params; ?>&page=<?php echo $prev_page; ?>" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>" aria-label="Previous page">Prev</a>
                     <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                        <a href="?tab=<?php echo $active_tab; ?>&page=<?php echo $i; ?>" class="<?php echo $i === $page ? 'active' : ''; ?>"><?php echo $i; ?></a>
+                        <a href="?<?php echo $query_params; ?>&page=<?php echo $i; ?>" class="<?php echo $i === $page ? 'active' : ''; ?>" aria-label="Page <?php echo $i; ?>"><?php echo $i; ?></a>
                     <?php endfor; ?>
-                    <a href="?tab=<?php echo $active_tab; ?>&page=<?php echo $next_page; ?>" class="<?php echo $page >= $total_pages ? 'disabled' : ''; ?>">Next</a>
-                    <a href="?tab=<?php echo $active_tab; ?>&page=<?php echo $total_pages; ?>" class="<?php echo $page >= $total_pages ? 'disabled' : ''; ?>">Last</a>
+                    <a href="?<?php echo $query_params; ?>&page=<?php echo $next_page; ?>" class="<?php echo $page >= $total_pages ? 'disabled' : ''; ?>" aria-label="Next page">Next</a>
+                    <a href="?<?php echo $query_params; ?>&page=<?php echo $total_pages; ?>" class="<?php echo $page >= $total_pages ? 'disabled' : ''; ?>" aria-label="Last page">Last</a>
                 </div>
             </div>
         </div>
@@ -789,12 +996,12 @@ try {
         const functionalities = [
             { name: 'Dashboard', url: 'dashboard.php' },
             { name: 'Submit Planting', url: 'submit.php' },
+            { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
             { name: 'History', url: 'history.php' },
-            { name: 'Feedback', url: 'feedback.php' },
-            { name: 'Logout', url: 'logout.php' }
+            { name: 'Feedback', url: 'feedback.php' }
         ];
 
         const searchInput = document.querySelector('#searchInput');
@@ -836,36 +1043,33 @@ try {
             profileDropdown.classList.toggle('active');
         });
 
+        profileBtn.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                profileDropdown.classList.toggle('active');
+            }
+        });
+
         document.addEventListener('click', function(e) {
             if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
                 profileDropdown.classList.remove('active');
             }
         });
 
-        // Filter functionality (client-side filtering by date)
+        // Filter functionality (server-side)
         const startDateInput = document.querySelector('#start_date');
         const endDateInput = document.querySelector('#end_date');
-        const historyCards = document.querySelectorAll('.history-card');
 
-        function filterHistory() {
-            const startDate = startDateInput.value ? new Date(startDateInput.value) : null;
-            const endDate = endDateInput.value ? new Date(endDateInput.value) : null;
-
-            historyCards.forEach(card => {
-                const dateText = card.querySelector('p:first-child').textContent;
-                const dateStr = dateText.replace('Date: ', '');
-                const entryDate = new Date(dateStr);
-
-                let show = true;
-                if (startDate && entryDate < startDate) show = false;
-                if (endDate && entryDate > new Date(endDate.setHours(23, 59, 59, 999))) show = false;
-
-                card.style.display = show ? 'block' : 'none';
-            });
+        function applyFilters() {
+            const params = new URLSearchParams(window.location.search);
+            params.set('start_date', startDateInput.value);
+            params.set('end_date', endDateInput.value);
+            params.set('page', '1');
+            window.location.search = params.toString();
         }
 
-        startDateInput.addEventListener('change', filterHistory);
-        endDateInput.addEventListener('change', filterHistory);
+        startDateInput.addEventListener('change', applyFilters);
+        endDateInput.addEventListener('change', applyFilters);
     </script>
 </body>
 </html>

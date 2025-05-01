@@ -1197,7 +1197,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                     <div class="redeem-option">
                         <h3><i class="fas fa-wallet"></i> Withdraw as Cash via PayPal</h3>
                         <p>
-                            Enter the amount to withdraw in Eco Points (Minimum: 100 points)
+                            Enter the amount to withdraw in Eco Points Minimum: 100 points
                             <span class="info-container">
                                 <span class="info-icon">i</span>
                                 <span class="info-tooltip">Conversion Rate: 100 Eco Points = 1 USD</span>
@@ -1206,7 +1206,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                         <p><strong>Current PayPal Email:</strong> <?php echo $paypal_email ? htmlspecialchars($paypal_email) : 'Not set'; ?></p>
                         <form id="withdrawForm" method="POST" action="">
                             <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                            <input type="number" name="amount_points" placeholder="Enter points to withdraw (e.g., 123)" min="100" required>
+                            <input type="number" name="amount_points" placeholder="Enter points to withdraw" min="100" required>
                             <button type="button" onclick="openWithdrawModal(<?php echo $eco_points; ?>, '<?php echo htmlspecialchars($paypal_email); ?>')">Withdraw Cash</button>
                         </form>
                     </div>

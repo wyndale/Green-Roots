@@ -22,13 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Validate file type (allow only images)
-            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/x-icon', 'image/vnd.microsoft.icon'];
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/avif'];
             $file_info = finfo_open(FILEINFO_MIME_TYPE);
             $mime_type = finfo_buffer($file_info, file_get_contents($file['tmp_name']));
             finfo_close($file_info);
 
             if (!in_array($mime_type, $allowed_types)) {
-                $error = "Invalid file type for $file_type. Only JPEG, PNG, GIF, and ICO are allowed.";
+                $error = "Invalid file type for $file_type. Only JPEG, PNG, GIF, ICO, and AVIF are allowed.";
                 break;
             }
 
@@ -37,12 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $uploaded_files[$file_type] = $file_data;
         }
 
-        if (empty($uploaded_files)) {
+        if (empty($uploaded_files) && empty($error)) {
             $error = 'No files were uploaded.';
         }
 
         // If no errors, proceed to store in database
-        if (empty($error)) {
+        if (empty($error) && !empty($uploaded_files)) {
             foreach ($uploaded_files as $file_type => $file_data) {
                 $asset_name = ucfirst(str_replace('_', ' ', $file_type));
 
@@ -213,25 +213,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="success <?php echo $success ? 'show' : ''; ?>">
             <?php echo htmlspecialchars($success); ?>
         </div>
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
             <div class="form-group">
                 <label for="default_profile">Default Profile Picture</label>
-                <input type="file" id="default_profile" name="default_profile" accept="image/*">
+                <input type="file" id="default_profile" name="default_profile" accept=".jpg,.jpeg,.png,.gif,.ico,.avif">
             </div>
             <div class="form-group">
                 <label for="icon">Icon</label>
-                <input type="file" id="icon" name="icon" accept="image/*">
+                <input type="file" id="icon" name="icon" accept=".jpg,.jpeg,.png,.gif,.ico,.avif">
             </div>
             <div class="form-group">
                 <label for="logo">Logo</label>
-                <input type="file" id="logo" name="logo" accept="image/*">
+                <input type="file" id="logo" name="logo" accept=".jpg,.jpeg,.png,.gif,.ico,.avif">
             </div>
             <div class="form-group">
                 <label for="default_voucher">Default Voucher Image</label>
-                <input type="file" id="default_voucher" name="default_voucher" accept="image/*">
+                <input type="file" id="default_voucher" name="default_voucher" accept=".jpg,.jpeg,.png,.gif,.ico,.avif">
             </div>
             <input type="submit" value="Upload Images">
         </form>
     </div>
+
+    <script>
+        // Client-side validation to ensure at least one file is selected
+        document.getElementById('uploadForm').addEventListener('submit', function(event) {
+            const inputs = document.querySelectorAll('input[type="file"]');
+            let hasFile = false;
+
+            inputs.forEach(input => {
+                if (input.files.length > 0) {
+                    hasFile = true;
+                }
+            });
+
+            if (!hasFile) {
+                event.preventDefault();
+                const errorDiv = document.querySelector('.error');
+                errorDiv.textContent = 'Please select at least one file to upload.';
+                errorDiv.classList.add('show');
+            }
+        });
+
+        // Optional: Client-side file type validation
+        const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.ico', '.avif'];
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.addEventListener('change', function() {
+                const errorDiv = document.querySelector('.error');
+                errorDiv.classList.remove('show');
+
+                if (this.files.length > 0) {
+                    const fileName = this.files[0].name.toLowerCase();
+                    const extension = fileName.substring(fileName.lastIndexOf('.'));
+                    if (!allowedExtensions.includes(extension)) {
+                        errorDiv.textContent = `Invalid file type for ${this.name}. Only JPEG, PNG, GIF, ICO, and AVIF are allowed.`;
+                        errorDiv.classList.add('show');
+                        this.value = ''; // Clear the input
+                    }
+                }
+            });
+        });
+    </script>
 </body>
 </html>
