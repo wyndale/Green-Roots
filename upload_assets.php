@@ -7,7 +7,7 @@ $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        $files = ['default_profile', 'icon', 'logo'];
+        $files = ['default_profile', 'icon', 'logo', 'default_voucher'];
         $uploaded_files = [];
 
         foreach ($files as $file_type) {
@@ -71,7 +71,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-
 
 <!DOCTYPE html>
 <html lang="en">
@@ -226,6 +225,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-group">
                 <label for="logo">Logo</label>
                 <input type="file" id="logo" name="logo" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label for="default_voucher">Default Voucher Image</label>
+                <input type="file" id="default_voucher" name="default_voucher" accept="image/*">
             </div>
             <input type="submit" value="Upload Images">
         </form>
