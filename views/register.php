@@ -95,7 +95,6 @@
                             } else {
                                 // Log an error or notify admin that default profile picture is missing
                                 error_log("Default profile picture not found in assets table during registration for user_id: $user_id");
-                                // Optionally, you can set a default value or take other actions
                             }
 
                             $success = 'Registration successful! You can now <a href="login.php">login</a>.';
@@ -125,55 +124,85 @@
         }
 
         body {
-            background: #E8F5E9; /* Matching login.php background */
+            background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
             color: #333;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            padding: 16px; /* Reduced from 20px by 4px */
+            padding: 16px;
         }
 
         .register-container {
             background: #fff;
-            padding: 36px; /* Reduced from 40px by 4px */
+            padding: 36px;
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 500px; /* Increased from 400px to 500px */
+            max-width: 500px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeIn 1s ease-in-out forwards;
+        }
+
+        .register-container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(76, 175, 80, 0.1) 0%, transparent 70%);
+            transform: rotate(45deg);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .register-container h2 {
-            font-size: 25px; /* Reduced from 32px by 4px */
+            font-size: 25px;
             color: #4CAF50;
-            margin-bottom: 6px; /* Reduced from 10px by 4px */
+            margin-bottom: 6px;
+            position: relative;
+            z-index: 1;
         }
 
         .register-container .subtitle {
-            font-size: 14px; /* Reduced from 16px by 4px */
+            font-size: 14px;
             color: #666;
-            margin-bottom: 26px; /* Reduced from 30px by 4px */
+            margin-bottom: 26px;
+            position: relative;
+            z-index: 1;
         }
 
         .register-container .error {
             background: #fee2e2;
             color: #dc2626;
-            padding: 6px; /* Reduced from 10px by 4px */
+            padding: 6px;
             border-radius: 5px;
-            margin-bottom: 21px; /* Reduced from 25px by 4px */
+            margin-bottom: 21px;
             text-align: center;
             display: none;
+            position: relative;
+            z-index: 1;
+            animation: fadeIn 0.5s ease-in-out;
         }
 
         .register-container .success {
             background: #d1fae5;
             color: #10b981;
-            padding: 6px; /* Reduced from 10px by 4px */
+            padding: 6px;
             border-radius: 5px;
-            margin-bottom: 21px; /* Reduced from 25px by 4px */
+            margin-bottom: 21px;
             text-align: center;
             display: none;
+            position: relative;
+            z-index: 1;
+            animation: fadeIn 0.5s ease-in-out;
         }
 
         .register-container .error.show,
@@ -182,7 +211,7 @@
         }
 
         .register-container .form-group {
-            margin-bottom: 26px; /* Reduced from 30px by 4px */
+            margin-bottom: 26px;
             position: relative;
             text-align: left;
         }
@@ -190,12 +219,19 @@
         .register-container .name-group {
             display: flex;
             gap: 10px;
-            margin-bottom: 17px; /* Reduced from 30px by 4px */
+            margin-bottom: 17px;
         }
 
         .register-container .name-group .form-group {
             flex: 1;
             margin-bottom: 0;
+        }
+
+        .register-container .location-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 26px;
         }
 
         .register-container .input-wrapper {
@@ -208,100 +244,120 @@
             top: 50%;
             transform: translateY(-50%);
             color: #999;
-            font-size: 12px; /* Reduced from 16px by 4px */
-            z-index: 1; /* Ensure icon stays above the input background */
+            font-size: 12px;
+            z-index: 1;
         }
 
         .register-container input[type="text"],
         .register-container input[type="email"],
-        .register-container input[type="password"] {
+        .register-container input[type="password"],
+        .register-container select {
             width: 100%;
-            padding: 7px 7px 7px 31px; /* Reduced from 10px to 6px, adjusted for icon */
-            border: 1px solid #dadce0; /* Google's border color */
-            border-radius: 4px; /* Slightly rounded corners like Google */
-            font-size: 13px; /* Reduced from 16px by 4px */
+            padding: 7px 7px 7px 31px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            font-size: 12px;
             outline: none;
             background: transparent;
-            transition: border-color 0.3s;
+            transition: border-color 0.3s, box-shadow 0.3s;
             position: relative;
-            z-index: 0; /* Ensure input stays below the label */
+            z-index: 0;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            opacity: 0;
+            animation: slideUp 0.5s ease-in-out forwards;
+            animation-delay: 0.2s;
         }
 
         .register-container .input-wrapper label {
             position: absolute;
-            left: 31px; /* Adjusted for icon */
+            left: 31px;
             top: 50%;
             transform: translateY(-50%);
-            font-size: 13px; /* Reduced from 14px by 4px */
+            font-size: 13px;
             color: #666;
             letter-spacing: 0.4px;
-            background: #fff; /* Background to cover the border when label moves up */
+            background: #fff;
             padding: 0 5px;
-            pointer-events: none; /* Prevent label from interfering with input */
+            pointer-events: none;
             transition: all 0.2s ease;
-            z-index: 1; /* Ensure label stays above the input */
+            z-index: 1;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .register-container .input-wrapper input:focus,
-        .register-container .input-wrapper input:not(:placeholder-shown) {
-            border-color: #4CAF50; /* Matching focus color */
+        .register-container .input-wrapper input:not(:placeholder-shown),
+        .register-container .input-wrapper select:focus,
+        .register-container .input-wrapper select:valid {
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.2);
         }
 
         .register-container .input-wrapper input:focus + label,
-        .register-container .input-wrapper input:not(:placeholder-shown) + label {
+        .register-container .input-wrapper input:not(:placeholder-shown) + label,
+        .register-container .input-wrapper select:focus + label,
+        .register-container .input-wrapper select:valid + label {
             top: 0;
             transform: translateY(-50%);
-            font-size: 11px; /* Reduced from 13px by 2px */
-            color: #4CAF50; /* Matching focus color for label */
-        }
-
-        .register-container select {
-            width: 100%;
-            padding: 6px; /* Reduced from 10px by 4px */
-            border: 1px solid #dadce0; /* Google's border color */
-            border-radius: 4px; /* Slightly rounded corners like Google */
-            font-size: 13px; /* Reduced from 16px by 4px */
-            outline: none;
-            background: transparent;
-            appearance: none;
-            background: url('data:image/svg+xml;utf8,<svg fill="%23999" height="20" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 6px center; /* Adjusted size and position */
-            background-size: 12px; /* Reduced from 16px by 4px */
-            transition: border-color 0.3s;
-        }
-
-        .register-container select:focus {
-            border-color: #4CAF50; /* Matching focus color */
+            font-size: 11px;
+            color: #4CAF50;
         }
 
         .register-container input[type="submit"] {
             background: #4CAF50;
             color: #fff;
-            padding: 10px; /* Reduced from 12px by 4px */
+            padding: 10px;
             border: none;
-            border-radius: 21px; /* Reduced from 25px by 4px */
+            border-radius: 21px;
             width: 70%;
-            font-size: 14px; /* Reduced from 16px by 4px */
+            font-size: 14px;
             font-weight: bold;
             cursor: pointer;
             transition: transform 0.3s, box-shadow 0.3s, background 0.3s;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 1;
+            animation: bounceIn 0.5s ease-out;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.9); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
         }
 
         .register-container input[type="submit"]:hover {
             background: #388E3C;
-            transform: translateY(-2px);
+            transform: translateY(-2px) scale(1.05);
             box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4);
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(-2px) scale(1.05); }
+            50% { transform: translateY(-5px) scale(1.1); }
+        }
+
+        .register-container input[type="submit"]:active {
+            transform: translateY(0) scale(0.95);
         }
 
         .register-container .links {
             text-align: center;
-            margin-top: 20px; /* Reduced from 15px by 4px */
+            margin-top: 20px;
+            position: relative;
+            z-index: 1;
         }
 
         .register-container .links p {
-            font-size: 12px; /* Reduced from 14px by 4px */
+            font-size: 12px;
             color: #666;
-            margin-bottom: 6px; /* Reduced from 10px by 4px */
+            margin-bottom: 6px;
         }
 
         .register-container .links a {
@@ -329,133 +385,132 @@
         /* Mobile Responsive Design */
         @media (max-width: 768px) {
             body {
-                padding: 11px; /* Reduced from 15px by 4px */
+                padding: 11px;
             }
 
             .register-container {
-                padding: 21px; /* Reduced from 25px by 4px */
+                padding: 21px;
                 max-width: 90%;
             }
 
             .register-container h2 {
-                font-size: 22px; /* Reduced from 26px by 4px */
-                margin-bottom: 4px; /* Reduced from 8px by 4px */
+                font-size: 22px;
+                margin-bottom: 4px;
             }
 
             .register-container .subtitle {
-                font-size: 10px; /* Reduced from 14px by 4px */
-                margin-bottom: 21px; /* Reduced from 25px by 4px */
+                font-size: 10px;
+                margin-bottom: 21px;
             }
 
             .register-container .error,
             .register-container .success {
-                margin-bottom: 16px; /* Reduced from 20px by 4px */
-                font-size: 9px; /* Reduced from 13px by 4px */
-                padding: 4px; /* Reduced from 8px by 4px */
+                margin-bottom: 16px;
+                font-size: 9px;
+                padding: 4px;
             }
 
             .register-container .form-group,
             .register-container .name-group {
-                margin-bottom: 21px; /* Reduced from 25px by 4px */
+                margin-bottom: 21px;
             }
 
             .register-container .name-group {
                 flex-direction: column;
-                gap: 21px; /* Reduced from 25px by 4px */
+                gap: 21px;
+            }
+
+            .register-container .location-group {
+                grid-template-columns: 1fr;
+                gap: 10px;
             }
 
             .register-container .input-wrapper label {
-                font-size: 10px; /* Reduced from 13px by 4px */
-                left: 26px; /* Adjusted for icon */
+                font-size: 10px;
+                left: 26px;
             }
 
             .register-container input[type="text"],
             .register-container input[type="email"],
             .register-container input[type="password"],
             .register-container select {
-                font-size: 10px; /* Reduced from 14px by 4px */
-                padding: 4px 4px 4px 26px; /* Reduced padding, adjusted for icon */
-            }
-
-            .register-container select {
-                padding: 4px; /* Reduced from 8px by 4px */
-                background-size: 10px; /* Reduced from 14px by 4px */
+                font-size: 10px;
+                padding: 4px 4px 4px 26px;
             }
 
             .register-container .input-wrapper i {
-                font-size: 10px; /* Reduced from 14px by 4px */
-                left: 4px; /* Reduced from 8px by 4px */
+                font-size: 10px;
+                left: 4px;
             }
 
             .register-container .input-wrapper input:focus + label,
-            .register-container .input-wrapper input:not(:placeholder-shown) + label {
-                font-size: 8px; /* Reduced from 10px by 2px */
+            .register-container .input-wrapper input:not(:placeholder-shown) + label,
+            .register-container .input-wrapper select:focus + label,
+            .register-container .input-wrapper select:valid + label {
+                font-size: 8px;
             }
 
             .register-container input[type="submit"] {
-                font-size: 10px; /* Reduced from 14px by 4px */
-                padding: 6px; /* Reduced from 10px by 4px */
+                font-size: 10px;
+                padding: 6px;
             }
 
             .register-container .links p,
             .register-container .links a {
-                font-size: 9px; /* Reduced from 13px by 4px */
+                font-size: 9px;
             }
         }
 
         @media (max-width: 480px) {
             .register-container {
-                padding: 16px; /* Reduced from 20px by 4px */
+                padding: 16px;
             }
 
             .register-container h2 {
-                font-size: 18px; /* Reduced from 22px by 4px */
+                font-size: 18px;
             }
 
             .register-container .subtitle {
-                font-size: 9px; /* Reduced from 13px by 4px */
+                font-size: 9px;
             }
 
             .register-container .error,
             .register-container .success {
-                font-size: 8px; /* Reduced from 12px by 4px */
+                font-size: 8px;
             }
 
             .register-container .input-wrapper label {
-                font-size: 9px; /* Reduced from 12px by 4px */
-                left: 22px; /* Adjusted for icon */
+                font-size: 9px;
+                left: 22px;
             }
 
             .register-container input[type="text"],
             .register-container input[type="email"],
             .register-container input[type="password"],
             .register-container select {
-                font-size: 9px; /* Reduced from 13px by 4px */
-                padding: 3px 3px 3px 22px; /* Reduced padding, adjusted for icon */
-            }
-
-            .register-container select {
-                padding: 3px; /* Reduced from 7px by 4px */
-                background-size: 8px; /* Reduced from 12px by 4px */
+                font-size: 9px;
+                padding: 3px 3px 3px 22px;
             }
 
             .register-container .input-wrapper i {
-                font-size: 9px; /* Reduced from 13px by 4px */
+                font-size: 9px;
             }
 
             .register-container .input-wrapper input:focus + label,
-            .register-container .input-wrapper input:not(:placeholder-shown) + label {
-                font-size: 7px; /* Reduced from 9px by 2px */
+            .register-container .input-wrapper input:not(:placeholder-shown) + label,
+            .register-container .input-wrapper select:focus + label,
+            .register-container .input-wrapper select:valid + label {
+                font-size: 7px;
             }
 
             .register-container input[type="submit"] {
-                font-size: 9px; /* Reduced from 13px by 4px */
-                padding: 4px; /* Reduced from 8px by 4px */
+                font-size: 9px;
+                padding: 4px;
             }
 
             .register-container .links p,
             .register-container .links a {
-                font-size: 8px; /* Reduced from 12px by 4px */
+                font-size: 8px;
             }
         }
     </style>
@@ -516,10 +571,36 @@
                     <label for="confirm_password">Confirm your password</label>
                 </div>
             </div>
-            <div class="form-group">
-                <select id="barangay_id" name="barangay_id" required>
-                    <option value="">Select Location</option>
-                </select>
+            <div class="form-group location-group">
+                <div class="input-wrapper">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <select id="region" name="region" required>
+                        <option value="" disabled selected hidden></option>
+                    </select>
+                    <label for="region">Select your region</label>
+                </div>
+                <div class="input-wrapper">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <select id="province" name="province" required>
+                        <option value="" disabled selected hidden></option>
+                    </select>
+                    <label for="province">Select your province</label>
+                </div>
+                <div class="input-wrapper">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <select id="city" name="city" required>
+                        <option value="" disabled selected hidden></option>
+                    </select>
+                    <label for="city">Select your city</label>
+                </div>
+                <div class="input-wrapper">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <select id="barangay" name="barangay" required>
+                        <option value="" disabled selected hidden></option>
+                    </select>
+                    <label for="barangay">Select your barangay</label>
+                </div>
+                <input type="hidden" id="barangay_id" name="barangay_id" required>
             </div>
             <input type="submit" value="Register">
         </form>
@@ -529,16 +610,16 @@
     </div>
 
     <script>
-        const locationSelect = document.querySelector('#barangay_id');
-        let currentLevel = 'region';
-        let selectedRegion = '';
-        let selectedProvince = '';
-        let selectedCity = '';
+        const regionSelect = document.querySelector('#region');
+        const provinceSelect = document.querySelector('#province');
+        const citySelect = document.querySelector('#city');
+        const barangaySelect = document.querySelector('#barangay');
+        const barangayIdInput = document.querySelector('#barangay_id');
 
         // Function to fetch data via AJAX
-        async function fetchOptions(level, parent = '') {
+        async function fetchOptions(level, parent = '', parentType = 'province') {
             try {
-                const response = await fetch(`../services/get_locations.php?level=${level}&parent=${encodeURIComponent(parent)}`);
+                const response = await fetch(`../services/get_locations.php?level=${level}&parent=${encodeURIComponent(parent)}&parentType=${parentType}`);
                 const data = await response.json();
                 if (data.error) {
                     throw new Error(data.error);
@@ -552,80 +633,91 @@
             }
         }
 
-        // Initial load of regions
-        async function loadRegions() {
-            const regions = await fetchOptions('regions');
-            locationSelect.innerHTML = '<option value="">Select Location</option>';
-            const optgroup = document.createElement('optgroup');
-            optgroup.label = 'Regions';
-            regions.forEach(region => {
+        // Function to populate a select element
+        function populateSelect(selectElement, items, isBarangay = false) {
+            selectElement.innerHTML = '<option value="" disabled selected hidden></option>';
+            items.forEach(item => {
                 const option = document.createElement('option');
-                option.value = `region:${region}`;
-                option.textContent = region;
-                optgroup.appendChild(option);
+                if (isBarangay) {
+                    const displayName = item.name.replace(/\s*\([^)]+\)\s*$/, '');
+                    option.textContent = displayName;
+                    option.value = item.barangay_id;
+                    option.dataset.fullName = item.name;
+                } else {
+                    option.textContent = item;
+                    option.value = item;
+                }
+                selectElement.appendChild(option);
             });
-            locationSelect.appendChild(optgroup);
+            selectElement.disabled = false;
         }
 
         // Load regions on page load
-        loadRegions();
+        async function loadRegions() {
+            const regions = await fetchOptions('regions');
+            populateSelect(regionSelect, regions);
+        }
 
-        locationSelect.addEventListener('change', async function() {
-            const value = this.value;
-            if (!value) return;
+        // Handle region change
+        regionSelect.addEventListener('change', async () => {
+            const region = regionSelect.value;
+            provinceSelect.disabled = false;
+            citySelect.disabled = true;
+            barangaySelect.disabled = true;
+            barangayIdInput.value = '';
 
-            const [level, selected] = value.split(':');
+            // Reset subsequent selects
+            provinceSelect.innerHTML = '<option value="" disabled selected hidden></option>';
+            citySelect.innerHTML = '<option value="" disabled selected hidden></option>';
+            barangaySelect.innerHTML = '<option value="" disabled selected hidden></option>';
 
-            if (level === 'region') {
-                selectedRegion = selected;
-                selectedProvince = '';
-                selectedCity = '';
-                currentLevel = 'province';
-
-                const provinces = await fetchOptions('provinces', selectedRegion);
-                this.innerHTML = '<option value="">Select Province</option>';
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = `${selectedRegion} > Provinces`;
-                provinces.forEach(province => {
-                    const option = document.createElement('option');
-                    option.value = `province:${province}`;
-                    option.textContent = province;
-                    optgroup.appendChild(option);
-                });
-                this.appendChild(optgroup);
-            } else if (level === 'province') {
-                selectedProvince = selected;
-                selectedCity = '';
-                currentLevel = 'city';
-
-                const cities = await fetchOptions('cities', selectedProvince);
-                this.innerHTML = '<option value="">Select City</option>';
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = `${selectedRegion} > ${selectedProvince} > Cities`;
-                cities.forEach(city => {
-                    const option = document.createElement('option');
-                    option.value = `city:${city}`;
-                    option.textContent = city;
-                    optgroup.appendChild(option);
-                });
-                this.appendChild(optgroup);
-            } else if (level === 'city') {
-                selectedCity = selected;
-                currentLevel = 'barangay';
-
-                const barangays = await fetchOptions('barangays', selectedCity);
-                this.innerHTML = '<option value="">Select Barangay</option>';
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = `${selectedRegion} > ${selectedProvince} > ${selectedCity} > Barangays`;
-                barangays.forEach(barangay => {
-                    const option = document.createElement('option');
-                    option.value = barangay.barangay_id;
-                    option.textContent = barangay.name;
-                    optgroup.appendChild(option);
-                });
-                this.appendChild(optgroup);
+            if (region === 'National Capital Region (NCR)') {
+                provinceSelect.disabled = true;
+                provinceSelect.innerHTML = '<option value="" disabled selected hidden>No provinces in NCR</option>';
+                const cities = await fetchOptions('cities', region, 'region');
+                populateSelect(citySelect, cities);
+                citySelect.disabled = false;
+            } else {
+                const provinces = await fetchOptions('provinces', region);
+                populateSelect(provinceSelect, provinces);
             }
         });
+
+        // Handle province change
+        provinceSelect.addEventListener('change', async () => {
+            const province = provinceSelect.value;
+            citySelect.disabled = false;
+            barangaySelect.disabled = true;
+            barangayIdInput.value = '';
+
+            // Reset subsequent selects
+            citySelect.innerHTML = '<option value="" disabled selected hidden></option>';
+            barangaySelect.innerHTML = '<option value="" disabled selected hidden></option>';
+
+            const cities = await fetchOptions('cities', province);
+            populateSelect(citySelect, cities);
+        });
+
+        // Handle city change
+        citySelect.addEventListener('change', async () => {
+            const city = citySelect.value;
+            barangaySelect.disabled = false;
+            barangayIdInput.value = '';
+
+            // Reset barangay select
+            barangaySelect.innerHTML = '<option value="" disabled selected hidden></option>';
+
+            const barangays = await fetchOptions('barangays', city);
+            populateSelect(barangaySelect, barangays, true);
+        });
+
+        // Handle barangay change
+        barangaySelect.addEventListener('change', () => {
+            barangayIdInput.value = barangaySelect.value;
+        });
+
+        // Initial load
+        loadRegions();
 
         // Client-side validation
         document.querySelector('form').addEventListener('submit', function(e) {

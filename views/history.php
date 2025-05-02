@@ -73,62 +73,16 @@ try {
         $profile_picture_data = 'default_profile.jpg';
     }
 
-    // Fetch logo
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
     $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
     $stmt->execute();
     $logo_data = $stmt->fetchColumn();
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
-
-    // Helper function to parse planting submission description
-    function parsePlantingDescription($description) {
-        // Example description: "Submitted 5 trees in Barangay 1"
-        $pattern = '/Submitted (\d+) trees in (.*)/';
-        if (preg_match($pattern, $description, $matches)) {
-            return [
-                'trees_planted' => (int)$matches[1],
-                'barangay_name' => $matches[2],
-                'status' => 'Approved' // Assuming activities are logged only after approval
-            ];
-        }
-        return [
-            'trees_planted' => 0,
-            'barangay_name' => 'Unknown',
-            'status' => 'Unknown'
-        ];
-    }
-
-    // Helper function to parse reward description
-    function parseRewardDescription($description) {
-        // Example description: "Claimed a cash reward of ₱100 (100 eco points)"
-        // or "Claimed a voucher reward: 10% off at Store (50 eco points)"
-        $pattern_cash = '/Claimed a cash reward of ₱([\d.]+) \((\d+) eco points\)/';
-        $pattern_voucher = '/Claimed a voucher reward: (.*?) \((\d+) eco points\)/';
-        
-        if (preg_match($pattern_cash, $description, $matches)) {
-            return [
-                'reward_type' => 'cash',
-                'description' => "Cash Reward",
-                'cash_value' => (float)$matches[1],
-                'eco_points_required' => (int)$matches[2],
-                'voucher_details' => null
-            ];
-        } elseif (preg_match($pattern_voucher, $description, $matches)) {
-            return [
-                'reward_type' => 'voucher',
-                'description' => $matches[1],
-                'cash_value' => null,
-                'eco_points_required' => (int)$matches[2],
-                'voucher_details' => $matches[1]
-            ];
-        }
-        return [
-            'reward_type' => 'unknown',
-            'description' => $description,
-            'cash_value' => null,
-            'eco_points_required' => 0,
-            'voucher_details' => null
-        ];
-    }
 
     // Fetch Planting History with Pagination and Date Filters
     if ($active_tab === 'planting') {
@@ -148,7 +102,7 @@ try {
         $planting_pages = ceil($planting_total / $entries_per_page);
 
         $query = "
-            SELECT activity_id, description, created_at 
+            SELECT activity_id, trees_planted, location, status, created_at 
             FROM activities 
             WHERE user_id = :user_id AND activity_type = 'submission'
         ";
@@ -166,19 +120,7 @@ try {
         $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
-        $raw_planting_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Parse the description for each entry
-        foreach ($raw_planting_history as $entry) {
-            $parsed = parsePlantingDescription($entry['description']);
-            $planting_history[] = [
-                'activity_id' => $entry['activity_id'],
-                'trees_planted' => $parsed['trees_planted'],
-                'barangay_name' => $parsed['barangay_name'],
-                'status' => $parsed['status'],
-                'submitted_at' => $entry['created_at']
-            ];
-        }
+        $planting_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     // Fetch Reward History with Pagination and Date Filters
@@ -199,7 +141,7 @@ try {
         $reward_pages = ceil($reward_total / $entries_per_page);
 
         $query = "
-            SELECT activity_id, description, created_at 
+            SELECT activity_id, reward_type, reward_value, eco_points, created_at 
             FROM activities 
             WHERE user_id = :user_id AND activity_type = 'reward'
         ";
@@ -217,21 +159,16 @@ try {
         $stmt->bindValue(':limit', $entries_per_page, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
-        $raw_reward_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $reward_history = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Parse the description for each entry
-        foreach ($raw_reward_history as $entry) {
-            $parsed = parseRewardDescription($entry['description']);
-            $reward_history[] = [
-                'activity_id' => $entry['activity_id'],
-                'reward_type' => $parsed['reward_type'],
-                'description' => $parsed['description'],
-                'cash_value' => $parsed['cash_value'],
-                'eco_points_required' => $parsed['eco_points_required'],
-                'voucher_details' => $parsed['voucher_details'],
-                'claimed_at' => $entry['created_at']
-            ];
+        // Since rewards.php already uses PHP, no conversion needed
+        foreach ($reward_history as &$entry) {
+            if ($entry['reward_type'] === 'cash') {
+                $numeric_value = floatval(str_replace('₱', '', $entry['reward_value']));
+                $entry['reward_value'] = "₱" . number_format($numeric_value, 2);
+            }
         }
+        unset($entry);
     }
 
     // Fetch Event History with Pagination and Date Filters
@@ -251,14 +188,15 @@ try {
         $event_total = $stmt->fetchColumn();
         $event_pages = ceil($event_total / $entries_per_page);
 
-        // Since the description contains the event ID (e.g., "Joined event with ID 6"),
-        // we'll need to join with the events table to get event details
         $query = "
-            SELECT a.activity_id, a.description, a.created_at, 
-                   e.event_id, e.title, e.event_date, e.location, ep.confirmed_at 
+            SELECT a.activity_id, a.event_title, a.event_date, a.location, a.created_at, ep.confirmed_at 
             FROM activities a 
-            LEFT JOIN event_participants ep ON ep.user_id = a.user_id AND ep.event_id = CAST(SUBSTRING_INDEX(a.description, ' ', -1) AS UNSIGNED)
-            LEFT JOIN events e ON e.event_id = CAST(SUBSTRING_INDEX(a.description, ' ', -1) AS UNSIGNED)
+            LEFT JOIN event_participants ep ON ep.user_id = a.user_id AND ep.event_id = (
+                SELECT event_id 
+                FROM events 
+                WHERE title = a.event_title 
+                LIMIT 1
+            )
             WHERE a.user_id = :user_id AND a.activity_type = 'event'
         ";
         if ($start_date) {
@@ -288,7 +226,7 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>History - Green Roots</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -299,7 +237,7 @@ try {
         }
 
         body {
-            background: #E8F5E9;
+            background: #f5f7fa;
             color: #333;
             overflow-x: hidden;
         }
@@ -335,10 +273,14 @@ try {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s;
+            transition: color 0.3s, transform 0.2s;
         }
 
-        .sidebar a:hover,
+        .sidebar a:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
         .sidebar a.active {
             color: #4CAF50;
         }
@@ -346,10 +288,10 @@ try {
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px;
         }
 
         .header {
@@ -358,6 +300,7 @@ try {
             align-items: center;
             margin-bottom: 20px;
             width: 100%;
+            max-width: 1200px;
             position: relative;
         }
 
@@ -411,7 +354,7 @@ try {
         }
 
         .header .search-bar .search-results a:hover {
-            background: #E8F5E9;
+            background: #e0e7ff;
         }
 
         .header .profile {
@@ -468,62 +411,83 @@ try {
         }
 
         .profile-dropdown a:hover {
-            background: #E8F5E9;
-        }
-
-        .history-nav {
-            width: 100%;
-            max-width: 800px;
-            background: #fff;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
-            padding: 15px 0;
-            display: flex;
-            justify-content: space-around;
-        }
-
-        .history-nav a {
-            color: #666;
-            text-decoration: none;
-            font-size: 16px;
-            padding: 10px 20px;
-            transition: color 0.3s, background 0.3s;
-            border-radius: 10px;
-        }
-
-        .history-nav a.active {
-            color: #fff;
-            background: #4CAF50;
-        }
-
-        .history-nav a:hover {
-            color: #4CAF50;
+            background: #e0e7ff;
         }
 
         .history-section {
-            background: #fff;
+            background: #E8F5E9;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             margin-bottom: 30px;
-            height: 650px;
             display: flex;
             flex-direction: column;
+            gap: 20px;
         }
 
         .history-section h2 {
             font-size: 28px;
             color: #4CAF50;
-            margin-bottom: 25px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .history-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .history-nav a {
+            background: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 16px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            flex: 1;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: #666;
+        }
+
+        .history-nav a i {
+            color: #666;
+            transition: color 0.3s ease;
+        }
+
+        .history-nav a.active {
+            background: rgb(187, 235, 191);
+            color: #4CAF50;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .history-nav a.active i {
+            color: #4CAF50;
+        }
+
+        .history-nav a:hover {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+        }
+
+        .history-nav a:hover i {
+            color: #4CAF50;
         }
 
         .filter-bar {
             display: flex;
             gap: 15px;
             margin-bottom: 20px;
+            align-items: center;
         }
 
         .filter-bar label {
@@ -538,12 +502,28 @@ try {
             font-size: 14px;
         }
 
+        .filter-bar button {
+            background: #4CAF50;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        .filter-bar button:hover {
+            background: #388E3C;
+            transform: scale(1.02);
+        }
+
         .history-list {
-            flex: 1;
-            overflow-y: auto;
             display: flex;
             flex-direction: column;
             gap: 20px;
+            max-height: 500px;
+            overflow-y: auto;
             padding-right: 10px;
         }
 
@@ -567,13 +547,14 @@ try {
 
         .history-card {
             background: #fff;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            border-left: 5px solid #4CAF50;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .history-card:hover {
+            transform: translateY(-5px);
         }
 
         .history-details {
@@ -615,12 +596,9 @@ try {
             font-weight: bold;
         }
 
-        .no-data {
-            text-align: center;
-            color: #666;
-            font-style: italic;
-            font-size: 16px;
-            margin-top: 20px;
+        .status-pending-event {
+            color: #f59e0b;
+            font-weight: bold;
         }
 
         .pagination {
@@ -631,23 +609,17 @@ try {
         }
 
         .pagination a {
-            padding: 8px 12px;
+            padding: 8px 16px;
             background: #fff;
-            color: #4CAF50;
-            text-decoration: none;
             border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            color: #666;
+            text-decoration: none;
             transition: background 0.3s;
         }
 
         .pagination a:hover {
-            background: #E8F5E9;
-        }
-
-        .pagination a.disabled {
-            color: #ccc;
-            pointer-events: none;
-            background: #f5f5f5;
+            background: #4CAF50;
+            color: #fff;
         }
 
         .pagination a.active {
@@ -660,7 +632,6 @@ try {
             color: #dc2626;
             padding: 12px;
             border-radius: 15px;
-            margin-bottom: 20px;
             text-align: center;
             font-size: 16px;
             width: 100%;
@@ -744,59 +715,59 @@ try {
                 right: 0;
             }
 
-            .history-nav {
-                flex-direction: column;
-                padding: 10px;
-            }
-
-            .history-nav a {
-                padding: 10px;
-                font-size: 14px;
-                border-bottom: 1px solid #e0e7ff;
-            }
-
-            .history-nav a:last-child {
-                border-bottom: none;
-            }
-
-            .history-nav a.active {
-                background: #4CAF50;
-                color: #fff;
-            }
-
             .history-section {
                 padding: 20px;
-                height: 500px;
             }
 
             .history-section h2 {
                 font-size: 24px;
             }
 
+            .history-nav {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .history-nav a {
+                padding: 8px 10px;
+                font-size: 14px;
+            }
+
+            .history-nav a i {
+                font-size: 14px;
+            }
+
             .filter-bar {
                 flex-direction: column;
-                gap: 10px;
+                align-items: flex-start;
+            }
+
+            .filter-bar label {
+                font-size: 14px;
             }
 
             .filter-bar input[type="date"] {
+                width: 100%;
+                font-size: 14px;
+                padding: 8px;
+            }
+
+            .filter-bar button {
+                font-size: 14px;
+                padding: 8px 15px;
                 width: 100%;
             }
 
             .history-card {
                 padding: 15px;
-                gap: 10px;
             }
 
             .history-detail-item {
-                font-size: 13px;
-            }
-
-            .no-data {
                 font-size: 14px;
             }
 
             .pagination a {
-                padding: 6px 10px;
+                padding: 6px 12px;
                 font-size: 14px;
             }
 
@@ -809,7 +780,7 @@ try {
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="<?php echo $logo_base64; ?>" alt="Green Roots Logo" class="logo">
+            <img src="<?php echo htmlspecialchars($logo_base64); ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
             <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
             <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
@@ -819,6 +790,7 @@ try {
             <a href="history.php" title="History" class="active"><i class="fas fa-history"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
         </div>
+
         <div class="main-content">
             <?php if (isset($error_message)): ?>
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
@@ -826,12 +798,12 @@ try {
             <div class="header">
                 <h1>History</h1>
                 <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput" aria-label="Search functionalities">
+                    <input type="text" placeholder="Search functionalities..." id="searchInput">
                     <div class="search-results" id="searchResults"></div>
                 </div>
-                <div class="profile" id="profileBtn" tabindex="0" role="button" aria-label="Profile menu">
+                <div class="profile" id="profileBtn">
                     <span><?php echo htmlspecialchars($username); ?></span>
-                    <img src="<?php echo $profile_picture_data; ?>" alt="Profile Picture">
+                    <img src="<?php echo htmlspecialchars($profile_picture_data); ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
                         <a href="account_settings.php">Account</a>
@@ -839,154 +811,141 @@ try {
                     </div>
                 </div>
             </div>
-            <div class="history-nav">
-                <a href="?tab=planting" class="<?php echo $active_tab === 'planting' ? 'active' : ''; ?>">Planting History</a>
-                <a href="?tab=reward" class="<?php echo $active_tab === 'reward' ? 'active' : ''; ?>">Reward History</a>
-                <a href="?tab=event" class="<?php echo $active_tab === 'event' ? 'active' : ''; ?>">Event History</a>
-            </div>
+
             <div class="history-section">
                 <h2>
                     <?php
-                        if ($active_tab === 'planting') echo 'Planting History';
-                        elseif ($active_tab === 'reward') echo 'Reward History';
-                        else echo 'Event History';
+                    if ($active_tab === 'planting') echo '<i class="fas fa-seedling"></i> Planting History';
+                    elseif ($active_tab === 'event') echo '<i class="fas fa-calendar-alt"></i> Event History';
+                    else echo '<i class="fas fa-gift"></i> Reward History';
                     ?>
                 </h2>
-                <div class="filter-bar">
-                    <div>
-                        <label for="start_date">From:</label>
-                        <input type="date" id="start_date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>">
-                    </div>
-                    <div>
-                        <label for="end_date">To:</label>
-                        <input type="date" id="end_date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>">
-                    </div>
+
+                <div class="history-nav">
+                    <a href="?tab=planting" class="<?php echo $active_tab === 'planting' ? 'active' : ''; ?>"><i class="fas fa-seedling"></i> Planting History</a>
+                    <a href="?tab=event" class="<?php echo $active_tab === 'event' ? 'active' : ''; ?>"><i class="fas fa-calendar-alt"></i> Event History</a>
+                    <a href="?tab=reward" class="<?php echo $active_tab === 'reward' ? 'active' : ''; ?>"><i class="fas fa-gift"></i> Reward History</a>
                 </div>
+
+                <div class="filter-bar">
+                    <label for="start_date">From:</label>
+                    <input type="date" id="start_date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>">
+                    <label for="end_date">To:</label>
+                    <input type="date" id="end_date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>">
+                    <button onclick="applyDateFilter()">Filter</button>
+                </div>
+
                 <div class="history-list">
                     <?php if ($active_tab === 'planting'): ?>
                         <?php if (empty($planting_history)): ?>
-                            <p class="no-data">No planting history available.</p>
+                            <p>No planting history found.</p>
                         <?php else: ?>
                             <?php foreach ($planting_history as $entry): ?>
                                 <div class="history-card">
                                     <div class="history-details">
                                         <div class="history-detail-item">
-                                            <i class="fas fa-calendar-alt"></i>
-                                            <span><?php echo date('F j, Y, g:i A', strtotime($entry['submitted_at'])); ?></span>
-                                        </div>
-                                        <div class="history-detail-item">
-                                            <i class="fas fa-tree"></i>
-                                            <span>Trees Planted: <?php echo $entry['trees_planted']; ?></span>
+                                            <i class="fas fa-seedling"></i>
+                                            Trees Planted: <?php echo htmlspecialchars($entry['trees_planted']); ?>
                                         </div>
                                         <div class="history-detail-item">
                                             <i class="fas fa-map-marker-alt"></i>
-                                            <span><?php echo htmlspecialchars($entry['barangay_name']); ?></span>
+                                            Location: <?php echo htmlspecialchars($entry['location']); ?>
                                         </div>
                                         <div class="history-detail-item">
                                             <i class="fas fa-info-circle"></i>
-                                            <span>Status: <span class="status-<?php echo strtolower($entry['status']); ?>" title="Status: <?php echo $entry['status']; ?>"><?php echo $entry['status']; ?></span></span>
+                                            Status: <span class="status-<?php echo htmlspecialchars($entry['status']); ?>"><?php echo htmlspecialchars(ucfirst($entry['status'])); ?></span>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-alt"></i>
+                                            Date: <?php echo htmlspecialchars(date('F j, Y, g:i a', strtotime($entry['created_at']))); ?>
                                         </div>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
-                    <?php elseif ($active_tab === 'reward'): ?>
-                        <?php if (empty($reward_history)): ?>
-                            <p class="no-data">No reward history available.</p>
+                    <?php elseif ($active_tab === 'event'): ?>
+                        <?php if (empty($event_history)): ?>
+                            <p>No event history found.</p>
                         <?php else: ?>
-                            <?php foreach ($reward_history as $entry): ?>
+                            <?php foreach ($event_history as $entry): ?>
                                 <div class="history-card">
                                     <div class="history-details">
                                         <div class="history-detail-item">
                                             <i class="fas fa-calendar-alt"></i>
-                                            <span><?php echo date('F j, Y, g:i A', strtotime($entry['claimed_at'])); ?></span>
+                                            Event: <?php echo htmlspecialchars($entry['event_title']); ?>
                                         </div>
                                         <div class="history-detail-item">
-                                            <i class="fas fa-gift"></i>
-                                            <span>Reward Type: <?php echo ucfirst($entry['reward_type']); ?></span>
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            Location: <?php echo htmlspecialchars($entry['location']); ?>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-calendar-day"></i>
+                                            Event Date: <?php echo htmlspecialchars(date('F j, Y', strtotime($entry['event_date']))); ?>
                                         </div>
                                         <div class="history-detail-item">
                                             <i class="fas fa-info-circle"></i>
-                                            <span><?php echo htmlspecialchars($entry['description']); ?></span>
+                                            Status: <span class="<?php echo $entry['confirmed_at'] ? 'status-confirmed' : 'status-pending-event'; ?>">
+                                                <?php echo $entry['confirmed_at'] ? 'Confirmed' : 'Pending Confirmation'; ?>
+                                            </span>
                                         </div>
                                         <div class="history-detail-item">
-                                            <i class="fas fa-coins"></i>
-                                            <span>Eco Points Used: <?php echo $entry['eco_points_required']; ?></span>
+                                            <i class="fas fa-clock"></i>
+                                            Joined At: <?php echo htmlspecialchars(date('F j, Y, g:i a', strtotime($entry['created_at']))); ?>
                                         </div>
-                                        <?php if ($entry['reward_type'] === 'cash'): ?>
-                                            <div class="history-detail-item">
-                                                <i class="fas fa-money-bill-wave"></i>
-                                                <span>Cash Value: ₱<?php echo number_format($entry['cash_value'], 2); ?></span>
-                                            </div>
-                                        <?php elseif ($entry['reward_type'] === 'voucher'): ?>
-                                            <div class="history-detail-item">
-                                                <i class="fas fa-ticket-alt"></i>
-                                                <span>Voucher Details: <?php echo htmlspecialchars($entry['voucher_details'] ?? 'N/A'); ?></span>
-                                            </div>
-                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     <?php else: ?>
-                        <?php if (empty($event_history)): ?>
-                            <p class="no-data">No event history available.</p>
+                        <?php if (empty($reward_history)): ?>
+                            <p>No reward history found.</p>
                         <?php else: ?>
-                            <?php foreach ($event_history as $entry): ?>
-                                <?php if (!$entry['event_id']) continue; // Skip if event details couldn't be fetched ?>
+                            <?php foreach ($reward_history as $entry): ?>
                                 <div class="history-card">
                                     <div class="history-details">
                                         <div class="history-detail-item">
+                                            <i class="fas fa-gift"></i>
+                                            Reward Type: <?php echo htmlspecialchars(ucfirst($entry['reward_type'])); ?>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-tag"></i>
+                                            Value: <?php echo htmlspecialchars($entry['reward_value']); ?>
+                                        </div>
+                                        <div class="history-detail-item">
+                                            <i class="fas fa-coins"></i>
+                                            Eco Points Used: <?php echo htmlspecialchars($entry['eco_points']); ?>
+                                        </div>
+                                        <div class="history-detail-item">
                                             <i class="fas fa-calendar-alt"></i>
-                                            <span>Joined At: <?php echo date('F j, Y, g:i A', strtotime($entry['created_at'])); ?></span>
+                                            Date: <?php echo htmlspecialchars(date('F j, Y, g:i a', strtotime($entry['created_at']))); ?>
                                         </div>
-                                        <div class="history-detail-item">
-                                            <i class="fas fa-calendar-check"></i>
-                                            <span>Event: <?php echo htmlspecialchars($entry['title']); ?></span>
-                                        </div>
-                                        <div class="history-detail-item">
-                                            <i class="fas fa-calendar-day"></i>
-                                            <span>Event Date: <?php echo date('F j, Y', strtotime($entry['event_date'])); ?></span>
-                                        </div>
-                                        <div class="history-detail-item">
-                                            <i class="fas fa-map-marker-alt"></i>
-                                            <span>Location: <?php echo htmlspecialchars($entry['location']); ?></span>
-                                        </div>
-                                        <?php if ($entry['confirmed_at']): ?>
-                                            <div class="history-detail-item">
-                                                <i class="fas fa-check-circle"></i>
-                                                <span class="status-confirmed">Confirmed At: <?php echo date('F j, Y, g:i A', strtotime($entry['confirmed_at'])); ?></span>
-                                            </div>
-                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
-                <div class="pagination">
-                    <?php
-                        $total_pages = 0;
-                        if ($active_tab === 'planting') $total_pages = $planting_pages;
-                        elseif ($active_tab === 'reward') $total_pages = $reward_pages;
-                        else $total_pages = $event_pages;
 
-                        $prev_page = $page - 1;
-                        $next_page = $page + 1;
-                        $query_params = http_build_query([
-                            'tab' => $active_tab,
-                            'start_date' => $start_date,
-                            'end_date' => $end_date
-                        ]);
-                    ?>
-                    <a href="?<?php echo $query_params; ?>&page=1" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>" aria-label="First page">First</a>
-                    <a href="?<?php echo $query_params; ?>&page=<?php echo $prev_page; ?>" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>" aria-label="Previous page">Prev</a>
-                    <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                        <a href="?<?php echo $query_params; ?>&page=<?php echo $i; ?>" class="<?php echo $i === $page ? 'active' : ''; ?>" aria-label="Page <?php echo $i; ?>"><?php echo $i; ?></a>
-                    <?php endfor; ?>
-                    <a href="?<?php echo $query_params; ?>&page=<?php echo $next_page; ?>" class="<?php echo $page >= $total_pages ? 'disabled' : ''; ?>" aria-label="Next page">Next</a>
-                    <a href="?<?php echo $query_params; ?>&page=<?php echo $total_pages; ?>" class="<?php echo $page >= $total_pages ? 'disabled' : ''; ?>" aria-label="Last page">Last</a>
-                </div>
+                <!-- Pagination -->
+                <?php if ($active_tab === 'planting' && $planting_total > $entries_per_page): ?>
+                    <div class="pagination">
+                        <?php for ($i = 1; $i <= $planting_pages; $i++): ?>
+                            <a href="?tab=planting&page=<?php echo $i; ?>&start_date=<?php echo urlencode($start_date); ?>&end_date=<?php echo urlencode($end_date); ?>" class="<?php echo $page === $i ? 'active' : ''; ?>"><?php echo $i; ?></a>
+                        <?php endfor; ?>
+                    </div>
+                <?php elseif ($active_tab === 'event' && $event_total > $entries_per_page): ?>
+                    <div class="pagination">
+                        <?php for ($i = 1; $i <= $event_pages; $i++): ?>
+                            <a href="?tab=event&page=<?php echo $i; ?>&start_date=<?php echo urlencode($start_date); ?>&end_date=<?php echo urlencode($end_date); ?>" class="<?php echo $page === $i ? 'active' : ''; ?>"><?php echo $i; ?></a>
+                        <?php endfor; ?>
+                    </div>
+                <?php elseif ($active_tab === 'reward' && $reward_total > $entries_per_page): ?>
+                    <div class="pagination">
+                        <?php for ($i = 1; $i <= $reward_pages; $i++): ?>
+                            <a href="?tab=reward&page=<?php echo $i; ?>&start_date=<?php echo urlencode($start_date); ?>&end_date=<?php echo urlencode($end_date); ?>" class="<?php echo $page === $i ? 'active' : ''; ?>"><?php echo $i; ?></a>
+                        <?php endfor; ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -1001,7 +960,8 @@ try {
             { name: 'Rewards', url: 'rewards.php' },
             { name: 'Events', url: 'events.php' },
             { name: 'History', url: 'history.php' },
-            { name: 'Feedback', url: 'feedback.php' }
+            { name: 'Feedback', url: 'feedback.php' },
+            { name: 'Logout', url: 'logout.php' }
         ];
 
         const searchInput = document.querySelector('#searchInput');
@@ -1043,33 +1003,22 @@ try {
             profileDropdown.classList.toggle('active');
         });
 
-        profileBtn.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                profileDropdown.classList.toggle('active');
-            }
-        });
-
         document.addEventListener('click', function(e) {
             if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
                 profileDropdown.classList.remove('active');
             }
         });
 
-        // Filter functionality (server-side)
-        const startDateInput = document.querySelector('#start_date');
-        const endDateInput = document.querySelector('#end_date');
-
-        function applyFilters() {
-            const params = new URLSearchParams(window.location.search);
-            params.set('start_date', startDateInput.value);
-            params.set('end_date', endDateInput.value);
-            params.set('page', '1');
-            window.location.search = params.toString();
+        // Apply date filter
+        function applyDateFilter() {
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            const tab = '<?php echo $active_tab; ?>';
+            let url = `?tab=${tab}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+            window.location.href = url;
         }
-
-        startDateInput.addEventListener('change', applyFilters);
-        endDateInput.addEventListener('change', applyFilters);
     </script>
 </body>
 </html>

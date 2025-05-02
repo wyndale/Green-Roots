@@ -181,14 +181,19 @@ try {
                         $redeemed_at = date('Y-m-d H:i:s');
                         $expiry_date = date('Y-m-d H:i:s', strtotime($redeemed_at . ' +30 days'));
 
-                        // Log activity
+                        // Log activity with detailed info
                         $stmt = $pdo->prepare("
-                            INSERT INTO activities (user_id, description, activity_type, created_at) 
-                            VALUES (:user_id, :description, 'reward', NOW())
+                            INSERT INTO activities (
+                                user_id, description, activity_type, reward_type, reward_value, eco_points, created_at
+                            ) VALUES (
+                                :user_id, :description, 'reward', 'voucher', :reward_value, :eco_points, NOW()
+                            )
                         ");
                         $stmt->execute([
                             'user_id' => $user_id,
-                            'description' => "Redeemed voucher: {$voucher['name']} for $points_cost points"
+                            'description' => "Redeemed voucher: {$voucher['name']} for $points_cost points",
+                            'reward_value' => $voucher['name'],
+                            'eco_points' => $points_cost
                         ]);
 
                         // Store voucher details in session for PDF generation
@@ -242,8 +247,8 @@ try {
             } elseif (!$paypal_email) {
                 $redeem_error = 'Please set your PayPal email in Payment Methods to proceed.';
             } else {
-                // Conversion rate: 100 points = $1
-                $cash_amount = $amount_points / 100;
+                // Conversion rate: 1 point = 0.5 PHP
+                $cash_amount = $amount_points * 0.5;
 
                 // Start transaction
                 $pdo->beginTransaction();
@@ -252,14 +257,19 @@ try {
                     $stmt = $pdo->prepare("UPDATE users SET eco_points = eco_points - :points WHERE user_id = :user_id");
                     $stmt->execute(['points' => $amount_points, 'user_id' => $user_id]);
 
-                    // Log activity
+                    // Log activity with detailed info
                     $stmt = $pdo->prepare("
-                        INSERT INTO activities (user_id, description, activity_type, created_at) 
-                        VALUES (:user_id, :description, 'reward', NOW())
+                        INSERT INTO activities (
+                            user_id, description, activity_type, reward_type, reward_value, eco_points, created_at
+                        ) VALUES (
+                            :user_id, :description, 'reward', 'cash', :reward_value, :eco_points, NOW()
+                        )
                     ");
                     $stmt->execute([
                         'user_id' => $user_id,
-                        'description' => "Withdrew $cash_amount USD ($amount_points points) via PayPal to $paypal_email"
+                        'description' => "Withdrew ₱$cash_amount ($amount_points points) via PayPal to $paypal_email",
+                        'reward_value' => "₱" . number_format($cash_amount, 2),
+                        'eco_points' => $amount_points
                     ]);
 
                     // Store withdrawal details in session for success modal
@@ -275,7 +285,7 @@ try {
 
                     $eco_points -= $amount_points;
                     $pdo->commit();
-                    $withdraw_message = "Successfully requested withdrawal of $cash_amount USD to $paypal_email.";
+                    $withdraw_message = "Successfully requested withdrawal of ₱$cash_amount to $paypal_email.";
                 } catch (Exception $e) {
                     $pdo->rollBack();
                     $redeem_error = "Error processing withdrawal: " . $e->getMessage();
@@ -1197,10 +1207,10 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                     <div class="redeem-option">
                         <h3><i class="fas fa-wallet"></i> Withdraw as Cash via PayPal</h3>
                         <p>
-                            Enter the amount to withdraw in Eco Points Minimum: 100 points
+                            Enter the amount to withdraw in Eco Points (Minimum: 100 points)
                             <span class="info-container">
                                 <span class="info-icon">i</span>
-                                <span class="info-tooltip">Conversion Rate: 100 Eco Points = 1 USD</span>
+                                <span class="info-tooltip">Conversion Rate: 1 Eco Point = ₱0.50</span>
                             </span>
                         </p>
                         <p><strong>Current PayPal Email:</strong> <?php echo $paypal_email ? htmlspecialchars($paypal_email) : 'Not set'; ?></p>
@@ -1257,7 +1267,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                 <div class="modal-content">
                     <span class="close-btn" onclick="closeModal('withdrawModal')">×</span>
                     <h3><i class="fas fa-wallet"></i> Confirm Withdrawal</h3>
-                    <p><strong>Amount to Withdraw:</strong> <span id="withdrawAmount"></span> USD</p>
+                    <p><strong>Amount to Withdraw:</strong> ₱<span id="withdrawAmount"></span></p>
                     <p><strong>Eco Points:</strong> <span id="withdrawPoints"></span> points</p>
                     <p><strong>PayPal Email:</strong> <span id="withdrawEmail"></span></p>
                     <form id="withdrawConfirmForm" method="POST" action="">
@@ -1275,7 +1285,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                     <div class="modal-content">
                         <span class="close-btn" onclick="closeModal('withdrawSuccessModal')">×</span>
                         <div class="withdraw-message"><?php echo htmlspecialchars($withdraw_message); ?></div>
-                        <p><strong>Amount:</strong> <?php echo htmlspecialchars(number_format($_SESSION['withdrawal_success']['cash_amount'], 2)); ?> USD</p>
+                        <p><strong>Amount:</strong> ₱<?php echo htmlspecialchars(number_format($_SESSION['withdrawal_success']['cash_amount'], 2)); ?></p>
                         <p><strong>Points Deducted:</strong> <?php echo htmlspecialchars($_SESSION['withdrawal_success']['points']); ?> points</p>
                         <p><strong>PayPal Email:</strong> <?php echo htmlspecialchars($_SESSION['withdrawal_success']['paypal_email']); ?></p>
                         <p><strong>Withdrawn At:</strong> <?php echo htmlspecialchars($_SESSION['withdrawal_success']['withdrawn_at']); ?></p>
@@ -1427,7 +1437,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                 document.querySelector('#paypalModal').classList.add('active');
                 return;
             }
-            const cashAmount = (amountPoints / 100).toFixed(2);
+            const cashAmount = (amountPoints * 0.5).toFixed(2);
             document.querySelector('#withdrawAmount').textContent = cashAmount;
             document.querySelector('#withdrawPoints').textContent = amountPoints;
             document.querySelector('#withdrawEmail').textContent = paypalEmail;

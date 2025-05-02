@@ -54,6 +54,12 @@ try {
         exit;
     }
 
+    // Fetch barangay name for logging
+    $stmt = $pdo->prepare("SELECT name FROM barangays WHERE barangay_id = :barangay_id");
+    $stmt->execute(['barangay_id' => $barangay_id]);
+    $barangay = $stmt->fetch(PDO::FETCH_ASSOC);
+    $barangay_name = $barangay ? $barangay['name'] : 'Unknown';
+
     // Fetch profile picture
     if ($user['profile_picture']) {
         $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
@@ -107,7 +113,7 @@ try {
                 $latitude = filter_input(INPUT_POST, 'latitude', FILTER_VALIDATE_FLOAT);
                 $longitude = filter_input(INPUT_POST, 'longitude', FILTER_VALIDATE_FLOAT);
                 $location_accuracy = filter_input(INPUT_POST, 'location_accuracy', FILTER_VALIDATE_FLOAT);
-                $submission_notes = filter_input(INPUT_POST, 'submission_notes', FILTER_SANITIZE_STRING);
+                $submission_notes = filter_input(INPUT_POST, 'submission_notes', FILTER_SANITIZE_SPECIAL_CHARS);
 
                 // Validate inputs
                 if ($trees_planted === false || $trees_planted <= 0) {
@@ -283,18 +289,20 @@ try {
                                                     'user_id' => $user_id
                                                 ]);
 
-                                                // Log the activity
-                                                $description = "Submitted a tree planting of $trees_planted trees.";
-                                                if ($proximity_note) {
-                                                    $description .= " $proximity_note";
-                                                }
+                                                // Log the activity with detailed info
+                                                $description = "Submitted $trees_planted trees in $barangay_name.";
                                                 $stmt = $pdo->prepare("
-                                                    INSERT INTO activities (user_id, description, activity_type)
-                                                    VALUES (:user_id, :description, 'submission')
+                                                    INSERT INTO activities (
+                                                        user_id, description, activity_type, trees_planted, location, status, created_at
+                                                    ) VALUES (
+                                                        :user_id, :description, 'submission', :trees_planted, :location, 'pending', NOW()
+                                                    )
                                                 ");
                                                 $stmt->execute([
                                                     'user_id' => $user_id,
-                                                    'description' => $description
+                                                    'description' => $description,
+                                                    'trees_planted' => $trees_planted,
+                                                    'location' => $barangay_name
                                                 ]);
 
                                                 // Commit transaction
@@ -338,6 +346,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
     return $earth_radius * $c; // Distance in km
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>

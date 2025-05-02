@@ -10,8 +10,6 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$username = $_SESSION['username'];
-
 // Fetch user data
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
@@ -154,11 +152,17 @@ try {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s;
+            transition: transform 0.3s, color 0.3s;
         }
 
         .sidebar a:hover {
             color: #4CAF50;
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
 
         .main-content {
@@ -180,7 +184,25 @@ try {
             color: #4CAF50;
         }
 
-        .header .search-bar {
+        .header .notification-search {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .notification-search .notification {
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .header .notification-search .notification:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
+        .header .notification-search .search-bar {
             display: flex;
             align-items: center;
             background: #fff;
@@ -191,15 +213,21 @@ try {
             width: 300px;
         }
 
-        .header .search-bar input {
+        .header .notification-search .search-bar .search-icon {
+            font-size: 16px;
+            color: #666;
+            margin-right: 5px;
+        }
+
+        .header .notification-search .search-bar input {
             border: none;
             outline: none;
             padding: 5px;
-            width: 100%;
+            width: 90%; /* Adjusted for icon space */
             font-size: 16px;
         }
 
-        .header .search-bar .search-results {
+        .header .notification-search .search-bar .search-results {
             position: absolute;
             top: 50px;
             left: 0;
@@ -211,11 +239,11 @@ try {
             z-index: 10;
         }
 
-        .header .search-bar .search-results.active {
+        .header .notification-search .search-bar .search-results.active {
             display: block;
         }
 
-        .header .search-bar .search-results a {
+        .header .notification-search .search-bar .search-results a {
             display: block;
             padding: 12px;
             color: #333;
@@ -224,7 +252,7 @@ try {
             font-size: 16px;
         }
 
-        .header .search-bar .search-results a:hover {
+        .header .notification-search .search-bar .search-results a:hover {
             background: #e0e7ff;
         }
 
@@ -321,7 +349,7 @@ try {
         }
 
         .stat-box:hover {
-            transform: translateY(-5px);
+            transform: scale(1.02);
         }
 
         .stat-box h3 {
@@ -347,13 +375,12 @@ try {
         .stat-box h3 .tooltip {
             position: absolute;
             top: -40px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: -10px; /* Align left edge of tooltip with left edge of icon */
             background: #333;
             color: #fff;
             padding: 5px 10px;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 12px;
             white-space: nowrap;
             display: none;
             z-index: 10;
@@ -363,7 +390,7 @@ try {
             content: '';
             position: absolute;
             bottom: -5px;
-            left: 50%;
+            left: 15px; /* Position arrow closer to the left to align with icon */
             transform: translateX(-50%);
             border-width: 5px;
             border-style: solid;
@@ -372,6 +399,7 @@ try {
 
         .stat-box canvas {
             max-height: 150px;
+            width: 100%; /* Ensure canvas scales with container */
         }
 
         .stat-box .podium {
@@ -379,41 +407,32 @@ try {
             height: 120px;
             margin: 0 auto;
             position: relative;
+            display: none; /* Already hidden */
         }
 
-        .stat-box .podium .steps {
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            height: 80px;
+        .stat-box .rank-icon {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto;
+            position: relative;
+            text-align: center;
         }
 
-        .stat-box .podium .step {
-            background: #e0e7ff;
-            border-radius: 5px;
+        .stat-box .rank-icon i {
+            font-size: 80px;
+            color: #FFD700; /* Gold color for trophy */
+            transition: transform 0.3s;
         }
 
-        .stat-box .podium .step.left {
-            width: 35px;
-            height: 50px;
+        .stat-box .rank-icon i:hover {
+            transform: scale(1.1);
         }
 
-        .stat-box .podium .step.center {
-            width: 50px;
-            height: 80px;
-            background: #d1d5db;
-        }
-
-        .stat-box .podium .step.right {
-            width: 35px;
-            height: 60px;
-        }
-
-        .stat-box .podium .rank {
+        .stat-box .rank-icon .rank {
             position: absolute;
-            top: 35px;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translate(-50%, -50%);
             font-size: 20px;
             color: #4CAF50;
             font-weight: bold;
@@ -428,6 +447,13 @@ try {
             border-bottom: 1px solid #e0e7ff;
             font-size: 15px;
             font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stat-box ul li i {
+            color: #4CAF50;
         }
 
         .download-btn {
@@ -442,10 +468,12 @@ try {
             font-size: 20px;
             font-weight: bold;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
         }
 
         .download-btn:hover {
-            background: #388E3C;
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 10px 20px rgba(76, 175, 80, 0.4);
         }
 
         .error-message {
@@ -494,30 +522,47 @@ try {
             }
 
             .header {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-direction: row;
+                align-items: center;
                 gap: 15px;
+                width: 100%;
             }
 
             .header h1 {
                 font-size: 24px;
             }
 
-            .header .search-bar {
-                width: 100%;
-                padding: 5px 10px;
+            .header .notification-search {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                width: auto;
+                flex-grow: 1;
             }
 
-            .header .search-bar input {
+            .header .notification-search .notification {
+                font-size: 20px;
+                flex-shrink: 0;
+            }
+
+            .header .notification-search .search-bar {
+                width: 100%;
+                max-width: 200px;
+                padding: 5px 10px;
+                flex-grow: 1;
+            }
+
+            .header .notification-search .search-bar input {
                 font-size: 14px;
             }
 
-            .header .search-bar .search-results {
+            .header .notification-search .search-bar .search-results {
                 top: 40px;
             }
 
             .header .profile {
                 margin-top: 0;
+                flex-shrink: 0;
             }
 
             .header .profile img {
@@ -527,6 +572,7 @@ try {
 
             .header .profile span {
                 font-size: 16px;
+                display: none; /* Hide the name to save space */
             }
 
             .profile-dropdown {
@@ -540,7 +586,7 @@ try {
             }
 
             .card .details {
-                flex-direction: column;
+                flex-direction: flex;
                 gap: 15px;
                 font-size: 16px;
             }
@@ -550,54 +596,47 @@ try {
             }
 
             .stats-grid {
-                grid-template-columns: 1fr;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Adjusted min width for better responsiveness */
                 gap: 20px;
             }
 
             .stat-box {
-                padding: 20px;
+                padding: 15px; /* Reduced padding for smaller screens */
             }
 
             .stat-box h3 {
-                font-size: 18px;
+                font-size: 16px; /* Reduced font size */
             }
 
             .stat-box canvas {
-                max-height: 120px;
+                max-height: 100px; /* Reduced height */
+                width: 100%; /* Ensure canvas scales */
             }
 
-            .stat-box .podium {
-                width: 100px;
-                height: 100px;
+            .stat-box .rank-icon {
+                width: 80px; /* Reduced size */
+                height: 80px;
             }
 
-            .stat-box .podium .steps {
-                height: 70px;
+            .stat-box .rank-icon i {
+                font-size: 50px; /* Reduced size */
             }
 
-            .stat-box .podium .step.left {
-                width: 30px;
-                height: 40px;
+            .stat-box .rank-icon .rank {
+                font-size: 16px; /* Reduced font size */
             }
 
-            .stat-box .podium .step.center {
-                width: 40px;
-                height: 70px;
-            }
-
-            .stat-box .podium .step.right {
-                width: 30px;
-                height: 50px;
-            }
-
-            .stat-box .podium .rank {
-                top: 30px;
-                font-size: 18px;
+            .stat-box ul {
+                font-size: 14px; /* Reduced font size for list */
             }
 
             .stat-box ul li {
                 font-size: 14px;
                 padding: 8px 0;
+                display: flex;
+                flex-wrap: wrap; /* Allow wrapping of long event text */
+                gap: 5px;
             }
 
             .download-btn {
@@ -612,13 +651,13 @@ try {
         <div class="sidebar">
             <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
-            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
-            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
-            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
-            <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
-            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="events.php" title="Events"><i class="fas fa-calendar-days"></i></a>
+            <a href="history.php" title="History"><i class="fas fa-clock"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -626,12 +665,16 @@ try {
             <?php endif; ?>
             <div class="header">
                 <h1>Green Roots</h1>
-                <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
-                    <div class="search-results" id="searchResults"></div>
+                <div class="notification-search">
+                    <div class="notification"><i class="fas fa-bell"></i></div>
+                    <div class="search-bar">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" placeholder="Search" id="searchInput">
+                        <div class="search-results" id="searchResults"></div>
+                    </div>
                 </div>
                 <div class="profile" id="profileBtn">
-                    <span><?php echo htmlspecialchars($username); ?></span>
+                    <span><?php echo htmlspecialchars($user['first_name']); ?></span>
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
@@ -665,12 +708,8 @@ try {
                 </div>
                 <div class="stat-box" onclick="window.location.href='leaderboard.php'">
                     <h3>Your Rank in Barangay</h3>
-                    <div class="podium">
-                        <div class="steps">
-                            <div class="step left"></div>
-                            <div class="step center"></div>
-                            <div class="step right"></div>
-                        </div>
+                    <div class="rank-icon">
+                        <i class="fas fa-trophy"></i>
                         <div class="rank"><?php echo $user_rank_display; ?></div>
                     </div>
                 </div>
@@ -679,6 +718,7 @@ try {
                     <ul>
                         <?php foreach ($events as $event): ?>
                             <li>
+                                <i class="fas fa-calendar-check"></i>
                                 <?php echo htmlspecialchars($event['title']); ?> - 
                                 <?php echo date('M d', strtotime($event['event_date'])); ?> at 
                                 <?php echo htmlspecialchars($event['location']); ?>

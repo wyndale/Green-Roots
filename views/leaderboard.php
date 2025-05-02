@@ -15,15 +15,19 @@ $username = $_SESSION['username'];
 // Initialize variables with default values
 $barangay_name = 'Unknown Barangay';
 $region_name = 'Unknown Region';
+$province_name = 'Unknown Province';
 $user_barangay_rank = 'N/A';
 $barangay_rank = 'N/A';
 $barangay_total_trees = 0;
 $barangay_last_updated = 'N/A';
 $region_rank = 'N/A';
 $region_total_trees = 0;
+$province_rank = 'N/A';
+$province_total_trees = 0;
 $user_in_barangay = null;
 $user_barangay = null;
 $user_region = null;
+$user_province = null;
 
 try {
     // Fetch user data
@@ -185,6 +189,29 @@ try {
             ];
         }
 
+        // Fetch province ranking
+        $stmt = $pdo->prepare("
+            SELECT r.barangay_id, r.total_trees_planted, r.rank_position 
+            FROM rankings r 
+            JOIN barangays b ON r.barangay_id = b.barangay_id 
+            WHERE b.province = :province_name
+        ");
+        $stmt->execute(['province_name' => $province_name]);
+        $province_rankings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $province_total_trees = 0;
+        foreach ($province_rankings as $ranking) {
+            $province_total_trees += $ranking['total_trees_planted'];
+            if ($ranking['barangay_id'] == $barangay_id) {
+                $province_rank = $ranking['rank_position'];
+            }
+        }
+
+        $user_province = [
+            'name' => $province_name,
+            'total_trees' => $province_total_trees
+        ];
+
         // Fetch region ranking
         $stmt = $pdo->prepare("
             SELECT r.barangay_id, r.total_trees_planted, r.rank_position 
@@ -230,6 +257,17 @@ try {
     $stmt->execute();
     $all_barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Fetch all provinces for modal and card
+    $stmt = $pdo->prepare("
+        SELECT b.province as name, SUM(r.total_trees_planted) as total_trees 
+        FROM rankings r 
+        JOIN barangays b ON r.barangay_id = b.barangay_id 
+        GROUP BY b.province 
+        ORDER BY total_trees DESC
+    ");
+    $stmt->execute();
+    $all_provinces = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     // Fetch all regions for modal and card
     $stmt = $pdo->prepare("
         SELECT b.region as name, SUM(r.total_trees_planted) as total_trees 
@@ -240,6 +278,16 @@ try {
     ");
     $stmt->execute();
     $all_regions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Determine province rank for display
+    $province_rank_position = 'N/A';
+    foreach ($all_provinces as $index => $province) {
+        if ($province['name'] === $province_name) {
+            $province_rank_position = $index + 1;
+            $user_province['rank_position'] = $province_rank_position;
+            break;
+        }
+    }
 
     // Determine region rank for display
     $region_rank_position = 'N/A';
@@ -441,9 +489,18 @@ try {
             background: #e0e7ff;
         }
 
-        .leaderboard-grid {
+        .leaderboard-grid-top {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            width: 100%;
+            max-width: 1200px;
+            margin-bottom: 30px;
+        }
+
+        .leaderboard-grid-bottom {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
             gap: 30px;
             width: 100%;
             max-width: 1200px;
@@ -471,7 +528,7 @@ try {
 
         .leaderboard-section h2 {
             font-size: 28px;
-            color:rgb(54, 134, 56);
+            color: rgb(54, 134, 56);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -709,7 +766,7 @@ try {
             }
 
             .header .profile {
-                margin-top:-rdf0;
+                margin-top: 0;
             }
 
             .header .profile img {
@@ -727,7 +784,8 @@ try {
                 right: 0;
             }
 
-            .leaderboard-grid {
+            .leaderboard-grid-top,
+            .leaderboard-grid-bottom {
                 grid-template-columns: 1fr;
                 gap: 20px;
             }
@@ -819,11 +877,12 @@ try {
                     </div>
                 </div>
             </div>
-            <div class="leaderboard-grid">
+            <div class="leaderboard-grid-top">
                 <div class="leaderboard-section your-rankings">
                     <h2>Your Rankings</h2>
                     <p>Rank in <?php echo htmlspecialchars($barangay_name); ?>: <?php echo $user_barangay_rank; ?></p>
                     <p><?php echo htmlspecialchars($barangay_name); ?> Rank: <?php echo $barangay_rank; ?> with <?php echo $barangay_total_trees; ?> trees</p>
+                    <p><?php echo htmlspecialchars($province_name); ?> Rank: <?php echo $province_rank; ?></p>
                     <p><?php echo htmlspecialchars($region_name); ?> Rank: <?php echo $region_rank; ?></p>
                     <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                 </div>
@@ -846,6 +905,8 @@ try {
                     </ul>
                     <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                 </div>
+            </div>
+            <div class="leaderboard-grid-bottom">
                 <div class="leaderboard-section clickable" id="topBarangaysCard">
                     <h2>Top Barangays</h2>
                     <ul class="leaderboard-list">
@@ -860,6 +921,25 @@ try {
                                     <span><?php echo htmlspecialchars($user_barangay['name']); ?></span>
                                 </div>
                                 <span><?php echo $user_barangay['total_trees_planted']; ?> trees</span>
+                            </li>
+                        <?php endif; ?>
+                    </ul>
+                    <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
+                </div>
+                <div class="leaderboard-section clickable" id="topProvincesCard">
+                    <h2>Top Provinces</h2>
+                    <ul class="leaderboard-list">
+                        <?php if (!$user_province || $province_rank_position === 'N/A'): ?>
+                            <li class="no-data">No province ranking available.</li>
+                        <?php else: ?>
+                            <li class="authenticated-user">
+                                <div class="rank-container">
+                                    <span class="rank-badge <?php echo $user_province['rank_position'] == 1 ? 'gold' : ($user_province['rank_position'] == 2 ? 'silver' : ($user_province['rank_position'] == 3 ? 'bronze' : ($user_province['rank_position'] == 4 ? 'platinum' : ($user_province['rank_position'] == 5 ? 'titanium' : 'iron')))); ?>">
+                                        <?php echo $user_province['rank_position']; ?>
+                                    </span>
+                                    <span><?php echo htmlspecialchars($user_province['name']); ?></span>
+                                </div>
+                                <span><?php echo $user_province['total_trees']; ?> trees</span>
                             </li>
                         <?php endif; ?>
                     </ul>
@@ -935,6 +1015,34 @@ try {
                                         <span><?php echo htmlspecialchars($barangay['name']); ?></span>
                                     </div>
                                     <span><?php echo $barangay['total_trees_planted']; ?> trees</span>
+                                </li>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Modal for Top Provinces -->
+            <div class="modal" id="topProvincesModal">
+                <div class="modal-content">
+                    <span class="close-btn" onclick="closeModal('topProvincesModal')">×</span>
+                    <h2>All Provinces</h2>
+                    <div class="modal-search">
+                        <input type="text" placeholder="Search provinces..." id="provincesSearchInput">
+                    </div>
+                    <ul class="leaderboard-list" id="provincesList">
+                        <?php if (empty($all_provinces)): ?>
+                            <li class="no-data">No province rankings available.</li>
+                        <?php else: ?>
+                            <?php foreach ($all_provinces as $index => $province): ?>
+                                <li class="<?php echo $province['name'] === $province_name ? 'authenticated-user' : ''; ?>" data-name="<?php echo htmlspecialchars($province['name']); ?>">
+                                    <div class="rank-container">
+                                        <span class="rank-badge <?php echo ($index + 1) == 1 ? 'gold' : (($index + 1) == 2 ? 'silver' : (($index + 1) == 3 ? 'bronze' : (($index + 1) == 4 ? 'platinum' : (($index + 1) == 5 ? 'titanium' : 'iron')))); ?>">
+                                            <?php echo $index + 1; ?>
+                                        </span>
+                                        <span><?php echo htmlspecialchars($province['name']); ?></span>
+                                    </div>
+                                    <span><?php echo $province['total_trees']; ?> trees</span>
                                 </li>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -1034,9 +1142,11 @@ try {
         // Modal functionality
         const topUsersCard = document.querySelector('#topUsersCard');
         const topBarangaysCard = document.querySelector('#topBarangaysCard');
+        const topProvincesCard = document.querySelector('#topProvincesCard');
         const topRegionsCard = document.querySelector('#topRegionsCard');
         const topUsersModal = document.querySelector('#topUsersModal');
         const topBarangaysModal = document.querySelector('#topBarangaysModal');
+        const topProvincesModal = document.querySelector('#topProvincesModal');
         const topRegionsModal = document.querySelector('#topRegionsModal');
 
         topUsersCard.addEventListener('click', function() {
@@ -1045,6 +1155,10 @@ try {
 
         topBarangaysCard.addEventListener('click', function() {
             topBarangaysModal.classList.add('active');
+        });
+
+        topProvincesCard.addEventListener('click', function() {
+            topProvincesModal.classList.add('active');
         });
 
         topRegionsCard.addEventListener('click', function() {
@@ -1093,6 +1207,7 @@ try {
 
         setupModalSearch('usersSearchInput', 'usersList');
         setupModalSearch('barangaysSearchInput', 'barangaysList');
+        setupModalSearch('provincesSearchInput', 'provincesList');
         setupModalSearch('regionsSearchInput', 'regionsList');
     </script>
 </body>

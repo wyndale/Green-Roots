@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 
 $level = $_GET['level'] ?? '';
 $parent = $_GET['parent'] ?? '';
+$parentType = $_GET['parentType'] ?? 'province';
 
 try {
     if ($level === 'regions') {
@@ -11,13 +12,18 @@ try {
         $data = $stmt->fetchAll(PDO::FETCH_COLUMN);
         echo json_encode($data);
     } elseif ($level === 'provinces') {
-        $stmt = $pdo->prepare("SELECT DISTINCT province FROM barangays WHERE region = ? ORDER BY province");
+        $stmt = $pdo->prepare("SELECT DISTINCT province FROM barangays WHERE region = ? AND province != '' ORDER BY province");
         $stmt->execute([$parent]);
         $data = $stmt->fetchAll(PDO::FETCH_COLUMN);
         echo json_encode($data);
     } elseif ($level === 'cities') {
-        $stmt = $pdo->prepare("SELECT DISTINCT city FROM barangays WHERE province = ? ORDER BY city");
-        $stmt->execute([$parent]);
+        if ($parentType === 'region') {
+            $stmt = $pdo->prepare("SELECT DISTINCT city FROM barangays WHERE region = ? AND province = '' ORDER BY city");
+            $stmt->execute([$parent]);
+        } else {
+            $stmt = $pdo->prepare("SELECT DISTINCT city FROM barangays WHERE province = ? ORDER BY city");
+            $stmt->execute([$parent]);
+        }
         $data = $stmt->fetchAll(PDO::FETCH_COLUMN);
         echo json_encode($data);
     } elseif ($level === 'barangays') {

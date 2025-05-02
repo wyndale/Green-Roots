@@ -120,57 +120,76 @@ try {
                 }
                 $join_message = 'You have already joined this event.';
             } else {
-                // Generate QR code data
-                $qr_code = generateQRCodeData($user_id, $event_id);
-
-                // Add user to event participants with QR code
+                // Fetch event details for logging
                 $stmt = $pdo->prepare("
-                    INSERT INTO event_participants (event_id, user_id, qr_code, joined_at) 
-                    VALUES (:event_id, :user_id, :qr_code, NOW())
-                ");
-                $stmt->execute([
-                    'event_id' => $event_id,
-                    'user_id' => $user_id,
-                    'qr_code' => $qr_code
-                ]);
-
-                // Log activity
-                $stmt = $pdo->prepare("
-                    INSERT INTO activities (user_id, description, activity_type, created_at) 
-                    VALUES (:user_id, :description, 'event', NOW())
-                ");
-                $stmt->execute([
-                    'user_id' => $user_id,
-                    'description' => "Joined event with ID $event_id"
-                ]);
-
-                // Fetch event details for the modal
-                $stmt = $pdo->prepare("
-                    SELECT e.title, e.event_date, e.location, e.capacity, 
-                           (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
-                           b.name as barangay_name 
-                    FROM events e 
-                    LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
-                    WHERE e.event_id = :event_id
+                    SELECT title, event_date, location 
+                    FROM events 
+                    WHERE event_id = :event_id
                 ");
                 $stmt->execute(['event_id' => $event_id]);
                 $event = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                // Prepare response for AJAX
-                if (isset($_POST['ajax'])) {
-                    echo json_encode([
-                        'success' => true,
-                        'user' => [
-                            'username' => $user['username'],
-                            'email' => $user['email']
-                        ],
-                        'event' => $event,
+                if ($event) {
+                    // Generate QR code data
+                    $qr_code = generateQRCodeData($user_id, $event_id);
+
+                    // Add user to event participants with QR code
+                    $stmt = $pdo->prepare("
+                        INSERT INTO event_participants (event_id, user_id, qr_code, joined_at) 
+                        VALUES (:event_id, :user_id, :qr_code, NOW())
+                    ");
+                    $stmt->execute([
+                        'event_id' => $event_id,
+                        'user_id' => $user_id,
                         'qr_code' => $qr_code
                     ]);
-                    exit;
-                }
 
-                $join_message = 'Successfully joined the event! Check your QR code in My Events.';
+                    // Log activity with detailed info
+                    $stmt = $pdo->prepare("
+                        INSERT INTO activities (
+                            user_id, description, activity_type, event_title, event_date, location, created_at
+                        ) VALUES (
+                            :user_id, :description, 'event', :event_title, :event_date, :location, NOW()
+                        )
+                    ");
+                    $stmt->execute([
+                        'user_id' => $user_id,
+                        'description' => "Joined event: {$event['title']}",
+                        'event_title' => $event['title'],
+                        'event_date' => $event['event_date'],
+                        'location' => $event['location']
+                    ]);
+
+                    // Fetch event details for the modal
+                    $stmt = $pdo->prepare("
+                        SELECT e.title, e.event_date, e.location, e.capacity, 
+                               (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
+                               b.name as barangay_name 
+                        FROM events e 
+                        LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
+                        WHERE e.event_id = :event_id
+                    ");
+                    $stmt->execute(['event_id' => $event_id]);
+                    $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                    // Prepare response for AJAX
+                    if (isset($_POST['ajax'])) {
+                        echo json_encode([
+                            'success' => true,
+                            'user' => [
+                                'username' => $user['username'],
+                                'email' => $user['email']
+                            ],
+                            'event' => $event,
+                            'qr_code' => $qr_code
+                        ]);
+                        exit;
+                    }
+
+                    $join_message = 'Successfully joined the event! Check your QR code in My Events.';
+                } else {
+                    $join_message = 'Event not found.';
+                }
             }
         }
     }
@@ -320,6 +339,7 @@ try {
     $error_message = "Error: " . $e->getMessage();
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>

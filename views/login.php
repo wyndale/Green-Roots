@@ -94,13 +94,21 @@
         }
 
         body {
-            background: #E8F5E9; /* Matching landing page background */
+            background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
             color: #333;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             padding: 20px;
+            animation: gradientAnimation 15s ease infinite;
+            background-size: 200% 200%;
+        }
+
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
 
         .login-container {
@@ -111,18 +119,42 @@
             width: 100%;
             max-width: 400px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeIn 1s ease-in-out forwards;
+        }
+
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(76, 175, 80, 0.1) 0%, transparent 70%);
+            transform: rotate(45deg);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .login-container h2 {
             font-size: 28px;
-            color: #4CAF50; /* Matching heading color */
+            color: #4CAF50;
             margin-bottom: 10px;
+            position: relative;
+            z-index: 1;
         }
 
         .login-container .subtitle {
             font-size: 15px;
             color: #5a5959;
             margin-bottom: 30px;
+            position: relative;
+            z-index: 1;
         }
 
         .login-container .error {
@@ -133,6 +165,9 @@
             margin-bottom: 25px;
             text-align: center;
             display: none;
+            position: relative;
+            z-index: 1;
+            animation: fadeIn 0.5s ease-in-out;
         }
 
         .login-container .error.show {
@@ -156,40 +191,56 @@
             transform: translateY(-50%);
             color: #999;
             font-size: 16px;
-            z-index: 1; /* Ensure icon stays above the input background */
+            z-index: 1;
         }
 
         .login-container .input-wrapper input {
             width: 100%;
-            padding: 10px 10px 10px 35px; /* Adjusted padding for icon */
-            border: 1px solid #dadce0; /* Google's border color */
-            border-radius: 4px; /* Slightly rounded corners like Google */
+            padding: 10px 10px 10px 35px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
             font-size: 14px;
             outline: none;
             background: transparent;
-            transition: border-color 0.3s;
+            transition: border-color 0.3s, box-shadow 0.3s;
             position: relative;
-            z-index: 0; /* Ensure input stays below the label */
+            z-index: 0;
+            opacity: 0;
+            animation: slideUp 0.5s ease-in-out forwards;
+        }
+
+        .login-container .input-wrapper input:nth-child(1) {
+            animation-delay: 0.2s;
+        }
+
+        .login-container .input-wrapper input:nth-child(2) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .login-container .input-wrapper label {
             position: absolute;
-            left: 35px; /* Adjusted for icon */
+            left: 35px;
             top: 50%;
             transform: translateY(-50%);
             font-size: 14px;
             color: #666;
             letter-spacing: 0.4px;
-            background: #fff; /* Background to cover the border when label moves up */
+            background: #fff;
             padding: 0 5px;
-            pointer-events: none; /* Prevent label from interfering with input */
+            pointer-events: none;
             transition: all 0.2s ease;
-            z-index: 1; /* Ensure label stays above the input */
+            z-index: 1;
         }
 
         .login-container .input-wrapper input:focus,
         .login-container .input-wrapper input:not(:placeholder-shown) {
-            border-color: #4CAF50; /* Matching focus color */
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.2);
         }
 
         .login-container .input-wrapper input:focus + label,
@@ -197,16 +248,16 @@
             top: 0;
             transform: translateY(-50%);
             font-size: 12px;
-            color: #4CAF50; /* Matching focus color for label */
+            color: #4CAF50;
         }
 
         .login-container input[type="submit"] {
-            background: #4CAF50; /* Solid color, no gradient */
+            background: #4CAF50;
             color: #fff;
             padding: 12px;
             margin-top: 12px;
             border: none;
-            border-radius: 25px; /* Rounded corners */
+            border-radius: 25px;
             width: 100%;
             font-size: 16px;
             font-weight: bold;
@@ -214,16 +265,35 @@
             cursor: pointer;
             transition: transform 0.3s, box-shadow 0.3s, background 0.3s;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            animation: bounceIn 0.5s ease-out;
+            position: relative;
+            z-index: 1;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.9); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
         }
 
         .login-container input[type="submit"]:hover {
-            background: #388E3C; /* Matching hover color */
-            transform: translateY(-2px); /* Lift effect on hover */
-            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4); /* Glow effect on hover */
+            background: #388E3C;
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(-2px) scale(1.05); }
+            50% { transform: translateY(-5px) scale(1.1); }
+        }
+
+        .login-container input[type="submit"]:active {
+            transform: translateY(0) scale(0.95);
         }
 
         .login-container .forgot-password {
-            color: #2E7D32; /* Complementary darker green */
+            color: #2E7D32;
             font-size: 14px;
             font-weight: 500;
             text-decoration: none;
@@ -231,12 +301,13 @@
             right: 0;
             top: calc(100% + 10px);
             transition: color 0.3s, transform 0.3s, box-shadow 0.3s;
+            z-index: 1;
         }
 
         .login-container .forgot-password:hover {
-            color: #1B5E20; /* Even darker green on hover */
-            transform: translateY(-2px); /* Lift effect on hover */
-            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4); /* Glow effect on hover */
+            color: #1B5E20;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4);
         }
 
         .login-container .separator {
@@ -245,6 +316,7 @@
             text-align: center;
             color: #666;
             font-size: 14px;
+            z-index: 1;
         }
 
         .login-container .separator::before,
@@ -270,6 +342,8 @@
             justify-content: center;
             gap: 20px;
             margin-bottom: 30px;
+            position: relative;
+            z-index: 1;
         }
 
         .login-container .third-party-login a {
@@ -285,25 +359,26 @@
         }
 
         .login-container .third-party-login a.google {
-            background: #2E7D32; /* Dark green matching forgot-password */
-            color: #fff; /* White icon for contrast */
+            background: rgb(9, 95, 12);
+            color: #fff;
+            border: 1px solid #dadce0;
         }
 
         .login-container .third-party-login a.google:hover {
-            background: #1B5E20; /* Slightly darker green on hover */
-            transform: translateY(-2px); /* Lift effect on hover */
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2); /* Glow effect on hover */
+            background:rgb(56, 152, 59);
+            transform: scale(1.1);
+            box-shadow: 0 4px 10px rgba(219, 68, 55, 0.3);
         }
 
         .login-container .third-party-login a.facebook {
-            background: #2E7D32; /* Dark green matching forgot-password */
-            color: #fff; /* White icon for contrast */
+            background:rgb(9, 95, 12);
+            color: #fff;
         }
 
         .login-container .third-party-login a.facebook:hover {
-            background: #1B5E20; /* Slightly darker green on hover */
-            transform: translateY(-2px); /* Lift effect on hover */
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2); /* Glow effect on hover */
+            background: rgb(56, 152, 59);
+            transform: scale(1.1);
+            box-shadow: 0 4px 10px rgba(66, 103, 178, 0.3);
         }
 
         .login-container .third-party-login a i {
@@ -313,6 +388,8 @@
         .login-container .links {
             text-align: center;
             margin-top: 15px;
+            position: relative;
+            z-index: 1;
         }
 
         .login-container .links p {
@@ -321,14 +398,15 @@
         }
 
         .login-container .links a {
-            color: #4CAF50; /* Matching link color */
+            color: #4CAF50;
             text-decoration: none;
             font-weight: bold;
-            transition: color 0.3s;
+            transition: color 0.3s, box-shadow 0.3s;
         }
 
         .login-container .links a:hover {
-            color: #388E3C; /* Matching hover color */
+            color: #388E3C;
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4);
         }
 
         /* Mobile Responsive Design */
@@ -364,12 +442,12 @@
 
             .login-container .input-wrapper label {
                 font-size: 12px;
-                left: 30px; /* Adjusted for icon */
+                left: 30px;
             }
 
             .login-container .input-wrapper input {
                 font-size: 14px;
-                padding: 8px 8px 8px 30px; /* Adjusted for icon */
+                padding: 8px 8px 8px 30px;
             }
 
             .login-container .input-wrapper i {
@@ -436,7 +514,7 @@
 
             .login-container .input-wrapper label {
                 font-size: 11px;
-                left: 28px; /* Adjusted for icon */
+                left: 28px;
             }
 
             .login-container .input-wrapper input {
