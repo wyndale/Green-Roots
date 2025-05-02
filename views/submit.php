@@ -19,7 +19,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$username = $_SESSION['username'];
+
+$submission_error = '';
+$submission_success = '';
 
 // Function to fetch planting site for a barangay
 function getPlantingSite($pdo, $barangay_id) {
@@ -311,7 +313,6 @@ try {
                                             } catch (Exception $e) {
                                                 $pdo->rollBack();
                                                 $submission_error = 'Failed to submit tree planting. Please try again or save locally if you are offline.';
-                                                echo $e->getMessage();
                                                 error_log("Submission error for user $user_id: " . $e->getMessage() . " | File: $file_name | Size: " . $_FILES['photo']['size']);
                                             }
                                         }
@@ -399,11 +400,17 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s;
+            transition: transform 0.3s, color 0.3s;
         }
 
         .sidebar a:hover {
             color: #4CAF50;
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
 
         .main-content {
@@ -429,7 +436,25 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             color: #4CAF50;
         }
 
-        .header .search-bar {
+        .header .notification-search {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .notification-search .notification {
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .header .notification-search .notification:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
+        .header .notification-search .search-bar {
             display: flex;
             align-items: center;
             background: #fff;
@@ -440,15 +465,21 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             width: 300px;
         }
 
-        .header .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 100%;
+        .header .notification-search .search-bar i {
+            margin-right: 10px;
+            color: #666;
             font-size: 16px;
         }
 
-        .header .search-bar .search-results {
+        .header .notification-search .search-bar input {
+            border: none;
+            outline: none;
+            padding: 5px;
+            width: 90%;
+            font-size: 16px;
+        }
+
+        .header .notification-search .search-bar .search-results {
             position: absolute;
             top: 50px;
             left: 0;
@@ -460,11 +491,11 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             z-index: 10;
         }
 
-        .header .search-bar .search-results.active {
+        .header .notification-search .search-bar .search-results.active {
             display: block;
         }
 
-        .header .search-bar .search-results a {
+        .header .notification-search .search-bar .search-results a {
             display: block;
             padding: 12px;
             color: #333;
@@ -473,7 +504,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             font-size: 16px;
         }
 
-        .header .search-bar .search-results a:hover {
+        .header .notification-search .search-bar .search-results a:hover {
             background: #e0e7ff;
         }
 
@@ -535,45 +566,51 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
         }
 
         .submission-form {
-            background: #fff;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             padding: 30px;
             border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
             width: 100%;
             max-width: 600px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .submission-form .form-header {
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
             margin-bottom: 25px;
+            position: relative;
         }
 
         .submission-form h2 {
             font-size: 28px;
-            color: #4CAF50;
+            color: #2E7D32;
             text-align: center;
+            margin-right: 10px;
         }
 
         .submission-form .info-icon {
-            position: absolute;
-            right: 0;
             font-size: 20px;
             color: #666;
             cursor: pointer;
-            transition: color 0.3s;
+            transition: transform 0.3s;
         }
 
-        .submission-form .info-icon:hover {
-            color: #4CAF50;
+        .submission-form .info-icon.flipped {
+            transform: rotateY(180deg);
         }
 
         .submission-form .guidelines-tooltip {
             position: absolute;
-            top: 40px;
-            right: 0;
+            top: -60px;
+            left: 50%;
+            transform: translateX(-50%);
             background: #E8F5E9;
             padding: 15px;
             border-radius: 5px;
@@ -627,33 +664,121 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
 
         .submission-form label {
             display: block;
-            font-size: 16px;
-            color: #666;
+            font-size: 17px;
+            color: #2E7D32;
             margin-bottom: 8px;
+            font-weight: 500;
         }
 
         .submission-form input[type="number"],
-        .submission-form input[type="file"],
         .submission-form textarea {
             width: 100%;
             padding: 12px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
+            border: 2px solid #C8E6C9;
+            border-radius: 10px;
             font-size: 16px;
             outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
         }
 
-        .submission-form input:focus,
+        .submission-form input[type="number"]:focus,
         .submission-form textarea:focus {
-            border-color: #4CAF50;
+            border-color: #2E7D32;
+            box-shadow: 0 0 10px rgba(46, 125, 50, 0.3);
+        }
+
+        .submission-form input[type="number"]:hover,
+        .submission-form textarea:hover {
+            border-color: #81C784;
+        }
+
+        .submission-form .upload-area {
+            width: 100%;
+            height: 200px;
+            border: 2px dashed #C8E6C9;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            cursor: pointer;
+            transition: border-color 0.3s, background 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .submission-form .upload-area:hover {
+            border-color: #81C784;
+            background: #F1F8E9;
+        }
+
+        .submission-form .upload-area.active {
+            border-color: #2E7D32;
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .submission-form .upload-area .upload-icon {
+            font-size: 40px;
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+
+        .submission-form .upload-area .choose-btn {
+            background: #4CAF50;
+            color: #fff;
+            padding: 8px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .submission-form .upload-area .choose-btn:hover {
+            background: #388E3C;
+            transform: translateY(-2px);
+        }
+
+        .submission-form .upload-area .or-text {
+            margin: 10px 0;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .submission-form .upload-area .drag-text {
+            color: #666;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .submission-form .upload-area input[type="file"] {
+            display: none;
         }
 
         .submission-form #photo-preview {
-            margin-top: 10px;
             max-width: 100%;
-            max-height: 200px;
+            max-height: 180px;
+            border-radius: 10px;
+            margin-top: 10px;
             display: none;
-            border-radius: 5px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .submission-form .upload-progress {
+            width: 0;
+            height: 5px;
+            background: #4CAF50;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            transition: width 0.3s;
         }
 
         .submission-form input[type="submit"] {
@@ -661,15 +786,44 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             color: #fff;
             border: none;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: transform 0.3s, background 0.3s;
             padding: 12px;
             font-size: 16px;
+            font-weight: bold;
             width: 100%;
-            border-radius: 5px;
+            border-radius: 10px;
+            margin-top: 10px;
         }
 
         .submission-form input[type="submit"]:hover {
+            transform: translateY(-5px) scale(1.05);
             background: #388E3C;
+        }
+
+        .submission-form button#saveLocalBtn {
+            background: #666;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            padding: 12px;
+            font-size: 16px;
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 10px;
+            display: none;
+            animation: pulse 1.5s infinite;
+        }
+
+        .submission-form button#saveLocalBtn:hover {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 102, 102, 0.4);
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(102, 102, 102, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(102, 102, 102, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(102, 102, 102, 0); }
         }
 
         .error-message {
@@ -701,6 +855,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
+                z-index: 100;
             }
 
             .sidebar img.logo {
@@ -719,31 +874,52 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             }
 
             .header {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-direction: row;
+                align-items: center;
                 gap: 15px;
+                width: 100%;
             }
 
             .header h1 {
-                font-size: 28px;
+                font-size: 24px;
             }
 
-            .header .search-bar {
+            .header .notification-search {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                width: auto;
+                flex-grow: 1;
+            }
+
+            .header .notification-search .notification {
+                font-size: 20px;
+                flex-shrink: 0;
+            }
+
+            .header .notification-search .search-bar {
                 width: 100%;
+                max-width: 200px;
                 padding: 5px 10px;
+                flex-grow: 1;
             }
 
-            .header .search-bar input {
-                width: 100%;
+            .header .notification-search .search-bar i {
+                font-size: 14px;
+                margin-right: 5px;
+            }
+
+            .header .notification-search .search-bar input {
                 font-size: 14px;
             }
 
-            .header .search-bar .search-results {
+            .header .notification-search .search-bar .search-results {
                 top: 40px;
             }
 
             .header .profile {
                 margin-top: 0;
+                flex-shrink: 0;
             }
 
             .header .profile img {
@@ -753,6 +929,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
 
             .header .profile span {
                 font-size: 16px;
+                display: none; /* Hide the name to save space */
             }
 
             .profile-dropdown {
@@ -774,8 +951,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             }
 
             .submission-form .guidelines-tooltip {
-                top: 35px;
-                right: -10px;
+                top: -50px;
                 width: 250px;
                 font-size: 12px;
             }
@@ -785,19 +961,97 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             }
 
             .submission-form input[type="number"],
-            .submission-form input[type="file"],
-            .submission-form textarea {
+            .submission-form textarea,
+            .submission-form .upload-area {
                 padding: 10px;
                 font-size: 14px;
             }
 
-            .submission-form input[type="submit"] {
+            .submission-form input[type="submit"],
+            .submission-form button#saveLocalBtn {
                 padding: 10px;
                 font-size: 14px;
             }
 
             .error-message {
                 font-size: 14px;
+            }
+        }
+
+        /* Additional media query for very small screens */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header .notification-search {
+                gap: 5px;
+            }
+
+            .header .notification-search .notification {
+                font-size: 18px;
+            }
+
+            .header .notification-search .search-bar {
+                max-width: 150px;
+                padding: 4px 8px;
+            }
+
+            .header .notification-search .search-bar i {
+                font-size: 12px;
+                margin-right: 4px;
+            }
+
+            .header .notification-search .search-bar input {
+                font-size: 12px;
+            }
+
+            .header .profile img {
+                width: 35px;
+                height: 35px;
+            }
+
+            .submission-form {
+                padding: 15px;
+            }
+
+            .submission-form h2 {
+                font-size: 20px;
+            }
+
+            .submission-form .info-icon {
+                font-size: 16px;
+            }
+
+            .submission-form label {
+                font-size: 12px;
+            }
+
+            .submission-form input[type="number"],
+            .submission-form textarea,
+            .submission-form .upload-area {
+                padding: 8px;
+                font-size: 12px;
+            }
+
+            .submission-form .upload-area .upload-icon {
+                font-size: 30px;
+            }
+
+            .submission-form .upload-area .choose-btn {
+                padding: 6px 15px;
+                font-size: 12px;
+            }
+
+            .submission-form .upload-area .or-text,
+            .submission-form .upload-area .drag-text {
+                font-size: 12px;
+            }
+
+            .submission-form input[type="submit"],
+            .submission-form button#saveLocalBtn {
+                padding: 8px;
+                font-size: 12px;
             }
         }
     </style>
@@ -807,13 +1061,13 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
         <div class="sidebar">
             <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
-            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
-            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
-            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
-            <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
-            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="events.php" title="Events"><i class="fas fa-calendar-days"></i></a>
+            <a href="history.php" title="History"><i class="fas fa-clock"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -821,12 +1075,16 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             <?php endif; ?>
             <div class="header">
                 <h1>Submit Tree Planting</h1>
-                <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
-                    <div class="search-results" id="searchResults"></div>
+                <div class="notification-search">
+                    <div class="notification"><i class="fas fa-bell"></i></div>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search" id="searchInput">
+                        <div class="search-results" id="searchResults"></div>
+                    </div>
                 </div>
                 <div class="profile" id="profileBtn">
-                    <span><?php echo htmlspecialchars($username); ?></span>
+                    <span><?php echo htmlspecialchars($user['first_name']); ?></span>
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
@@ -866,8 +1124,15 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
                         <input type="number" id="trees_planted" name="trees_planted" min="1" max="100" required>
                     </div>
                     <div class="form-group">
-                        <label for="photo">Upload Photo</label>
-                        <input type="file" id="photo" name="photo" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/heic,image/heif" required>
+                        <label>Upload Photo</label>
+                        <div class="upload-area" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                            <div class="choose-btn">Browse</div>
+                            <div class="or-text">or</div>
+                            <div class="drag-text">drag files here</div>
+                            <input type="file" id="photo" name="photo" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/heic,image/heif" required>
+                            <div class="upload-progress"></div>
+                        </div>
                         <img id="photo-preview" src="#" alt="Photo Preview">
                     </div>
                     <div class="form-group">
@@ -875,7 +1140,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
                         <textarea id="submission_notes" name="submission_notes" rows="3" placeholder="e.g., Planted 5 mango trees near the river"></textarea>
                     </div>
                     <input type="submit" id="submitBtn" value="Submit Planting">
-                    <button type="button" id="saveLocalBtn" style="display: none; background: #666; color: #fff; padding: 12px; border-radius: 5px; width: 100%; margin-top: 10px;">Save Locally (Offline)</button>
+                    <button type="button" id="saveLocalBtn" style="display: none;">Save Locally (Offline)</button>
                 </form>
             </div>
         </div>
@@ -939,37 +1204,71 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             }
         });
 
-        // Guidelines tooltip functionality
+        // Guidelines tooltip and info icon flip functionality
         const infoIcon = document.querySelector('#infoIcon');
         const guidelinesTooltip = document.querySelector('#guidelinesTooltip');
 
         infoIcon.addEventListener('click', function() {
+            this.classList.toggle('flipped');
             guidelinesTooltip.classList.toggle('active');
         });
 
         document.addEventListener('click', function(e) {
             if (!infoIcon.contains(e.target) && !guidelinesTooltip.contains(e.target)) {
+                infoIcon.classList.remove('flipped');
                 guidelinesTooltip.classList.remove('active');
             }
         });
 
-        // Photo preview functionality
+        // Upload area functionality
+        const uploadArea = document.querySelector('#uploadArea');
         const photoInput = document.querySelector('#photo');
         const photoPreview = document.querySelector('#photo-preview');
+        const uploadProgress = document.querySelector('.upload-progress');
 
-        photoInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    photoPreview.src = e.target.result;
-                    photoPreview.style.display = 'block';
-                };
-                reader.readAsDataURL(file);
-            } else {
-                photoPreview.style.display = 'none';
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#2E7D32';
+            uploadArea.style.background = '#F1F8E9';
+        });
+
+        uploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#C8E6C9';
+            uploadArea.style.background = '#fff';
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleFileUpload(file);
             }
         });
+
+        uploadArea.querySelector('.choose-btn').addEventListener('click', () => photoInput.click());
+
+        photoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleFileUpload(file);
+            }
+        });
+
+        function handleFileUpload(file) {
+            uploadArea.classList.add('active');
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                photoPreview.src = e.target.result;
+                photoPreview.style.display = 'block';
+                uploadProgress.style.width = '100%';
+                setTimeout(() => {
+                    uploadProgress.style.width = '0';
+                }, 300);
+            };
+            reader.readAsDataURL(file);
+            setTimeout(() => uploadArea.classList.remove('active'), 300);
+        }
 
         // Capture GPS coordinates
         window.addEventListener('load', function() {
@@ -1003,18 +1302,15 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
         window.addEventListener('online', function() {
             saveLocalBtn.style.display = 'none';
             submitBtn.style.display = 'block';
-            // Check for locally saved submissions
             const savedSubmission = localStorage.getItem('pendingSubmission');
             if (savedSubmission) {
                 if (confirm('You have a saved submission. Would you like to submit it now?')) {
                     const data = JSON.parse(savedSubmission);
-                    // Populate form and submit
                     document.querySelector('#trees_planted').value = data.trees_planted;
                     document.querySelector('#submission_notes').value = data.submission_notes;
                     document.querySelector('#latitude').value = data.latitude;
                     document.querySelector('#longitude').value = data.longitude;
                     document.querySelector('#location_accuracy').value = data.location_accuracy;
-                    // Note: Photo cannot be auto-submitted due to security restrictions
                     alert('Please re-upload the photo to submit.');
                 }
             }
@@ -1037,7 +1333,6 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             alert('Submission saved locally. Please submit when you are back online.');
         });
 
-        // Check initial connectivity state
         if (!navigator.onLine) {
             saveLocalBtn.style.display = 'block';
             submitBtn.style.display = 'none';

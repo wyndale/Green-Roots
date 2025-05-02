@@ -45,11 +45,7 @@ try {
 
 // Fetch user data
 try {
-    $stmt = $pdo->prepare("
-        SELECT user_id, username, email, profile_picture, eco_points, paypal_email 
-        FROM users 
-        WHERE user_id = :user_id
-    ");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -422,6 +418,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             position: fixed;
             top: 0;
             bottom: 0;
+            overflow-y: auto;
         }
 
         .sidebar img.logo {
@@ -434,12 +431,17 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s, transform 0.2s;
+            transition: transform 0.3s, color 0.3s;
         }
 
         .sidebar a:hover {
             color: #4CAF50;
-            transform: scale(1.1);
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
 
         .main-content {
@@ -455,9 +457,8 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 40px;
             width: 100%;
-            max-width: 1200px;
             position: relative;
         }
 
@@ -466,7 +467,25 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             color: #4CAF50;
         }
 
-        .header .search-bar {
+        .header .notification-search {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .notification-search .notification {
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .header .notification-search .notification:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
+        .header .notification-search .search-bar {
             display: flex;
             align-items: center;
             background: #fff;
@@ -477,15 +496,21 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             width: 300px;
         }
 
-        .header .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 100%;
+        .header .notification-search .search-bar i {
+            margin-right: 10px;
+            color: #666;
             font-size: 16px;
         }
 
-        .header .search-bar .search-results {
+        .header .notification-search .search-bar input {
+            border: none;
+            outline: none;
+            padding: 5px;
+            width: 90%;
+            font-size: 16px;
+        }
+
+        .header .notification-search .search-bar .search-results {
             position: absolute;
             top: 50px;
             left: 0;
@@ -497,11 +522,11 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             z-index: 10;
         }
 
-        .header .search-bar .search-results.active {
+        .header .notification-search .search-bar .search-results.active {
             display: block;
         }
 
-        .header .search-bar .search-results a {
+        .header .notification-search .search-bar .search-results a {
             display: block;
             padding: 12px;
             color: #333;
@@ -510,7 +535,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             font-size: 16px;
         }
 
-        .header .search-bar .search-results a:hover {
+        .header .notification-search .search-bar .search-results a:hover {
             background: #e0e7ff;
         }
 
@@ -572,21 +597,27 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         }
 
         .rewards-section {
-            background: #E8F5E9;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             padding: 30px;
             border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
             width: 100%;
             max-width: 1200px;
             margin-bottom: 30px;
             display: flex;
             flex-direction: column;
             gap: 20px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .rewards-section h2 {
             font-size: 28px;
-            color: #4CAF50;
+            color: #2E7D32;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
@@ -622,7 +653,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         }
 
         .reward-nav button.active {
-            background: rgb(187, 235, 191);
+            background: #BBEBBF;
             color: #4CAF50;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
@@ -641,7 +672,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         }
 
         .eco-points {
-            background: rgb(187, 235, 191);
+            background: #BBEBBF;
             padding: 15px;
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
@@ -686,7 +717,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             border-radius: 10px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             text-align: center;
-            transition: transform 0.2s;
+            transition: transform 0.5s;
             cursor: pointer;
         }
 
@@ -741,7 +772,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         }
 
         .redeem-option {
-            background: #fff;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             padding: 25px;
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
@@ -749,7 +780,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
 
         .redeem-option h3 {
             font-size: 22px;
-            color: #4CAF50;
+            color: #2E7D32;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
@@ -804,7 +835,8 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             margin-bottom: 15px;
         }
 
-        .redeem-option input[type="number"] {
+        .redeem-option input[type="number"],
+        .redeem-option input[type="email"] {
             width: 100%;
             padding: 12px;
             border: 1px solid #e0e7ff;
@@ -979,6 +1011,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
+                z-index: 100;
             }
 
             .sidebar img.logo {
@@ -997,31 +1030,52 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             }
 
             .header {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-direction: row;
+                align-items: center;
                 gap: 15px;
+                width: 100%;
             }
 
             .header h1 {
-                font-size: 28px;
+                font-size: 24px;
             }
 
-            .header .search-bar {
+            .header .notification-search {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                width: auto;
+                flex-grow: 1;
+            }
+
+            .header .notification-search .notification {
+                font-size: 20px;
+                flex-shrink: 0;
+            }
+
+            .header .notification-search .search-bar {
                 width: 100%;
+                max-width: 200px;
                 padding: 5px 10px;
+                flex-grow: 1;
             }
 
-            .header .search-bar input {
-                width: 100%;
+            .header .notification-search .search-bar i {
+                font-size: 14px;
+                margin-right: 5px;
+            }
+
+            .header .notification-search .search-bar input {
                 font-size: 14px;
             }
 
-            .header .search-bar .search-results {
+            .header .notification-search .search-bar .search-results {
                 top: 40px;
             }
 
             .header .profile {
                 margin-top: 0;
+                flex-shrink: 0;
             }
 
             .header .profile img {
@@ -1031,6 +1085,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
 
             .header .profile span {
                 font-size: 16px;
+                display: none; /* Hide the name to save space */
             }
 
             .profile-dropdown {
@@ -1075,7 +1130,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             }
 
             .voucher-card img {
-                height: 100px;
+                height: 220px;
             }
 
             .voucher-card h4 {
@@ -1099,7 +1154,8 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                 font-size: 18px;
             }
 
-            .redeem-option input[type="number"] {
+            .redeem-option input[type="number"],
+            .redeem-option input[type="email"] {
                 font-size: 14px;
                 padding: 8px;
             }
@@ -1137,6 +1193,128 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                 font-size: 14px;
             }
         }
+
+        /* Additional media query for very small screens */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header .notification-search {
+                gap: 5px;
+            }
+
+            .header .notification-search .notification {
+                font-size: 18px;
+            }
+
+            .header .notification-search .search-bar {
+                max-width: 150px;
+                padding: 4px 8px;
+            }
+
+            .header .notification-search .search-bar i {
+                font-size: 12px;
+                margin-right: 4px;
+            }
+
+            .header .notification-search .search-bar input {
+                font-size: 12px;
+            }
+
+            .header .profile img {
+                width: 35px;
+                height: 35px;
+            }
+
+            .rewards-section {
+                padding: 15px;
+            }
+
+            .rewards-section h2 {
+                font-size: 20px;
+            }
+
+            .reward-nav button {
+                font-size: 12px;
+                padding: 6px 8px;
+            }
+
+            .reward-nav button i {
+                font-size: 12px;
+            }
+
+            .eco-points {
+                font-size: 14px;
+            }
+
+            .eco-points i {
+                font-size: 16px;
+            }
+
+            .voucher-card img {
+                height: 100px;
+            }
+
+            .voucher-card h4 {
+                font-size: 12px;
+            }
+
+            .voucher-card p {
+                font-size: 10px;
+            }
+
+            .pagination a {
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+
+            .redeem-option {
+                padding: 10px;
+            }
+
+            .redeem-option h3 {
+                font-size: 16px;
+            }
+
+            .redeem-option input[type="number"],
+            .redeem-option input[type="email"] {
+                font-size: 12px;
+                padding: 6px;
+            }
+
+            .redeem-option button {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+
+            .modal-content {
+                padding: 15px;
+            }
+
+            .modal-content h3 {
+                font-size: 18px;
+            }
+
+            .modal-content p {
+                font-size: 12px;
+            }
+
+            .modal-content .redeem-message,
+            .modal-content .withdraw-message {
+                font-size: 12px;
+            }
+
+            .modal-content button {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+
+            .error-message,
+            .redeem-error {
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1144,13 +1322,13 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         <div class="sidebar">
             <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
-            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
-            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
-            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
-            <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
-            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="events.php" title="Events"><i class="fas fa-calendar-days"></i></a>
+            <a href="history.php" title="History"><i class="fas fa-clock"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -1161,12 +1339,16 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             <?php endif; ?>
             <div class="header">
                 <h1>Rewards</h1>
-                <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
-                    <div class="search-results" id="searchResults"></div>
+                <div class="notification-search">
+                    <div class="notification"><i class="fas fa-bell"></i></div>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search" id="searchInput">
+                        <div class="search-results" id="searchResults"></div>
+                    </div>
                 </div>
                 <div class="profile" id="profileBtn">
-                    <span><?php echo htmlspecialchars($username); ?></span>
+                    <span><?php echo htmlspecialchars($user['first_name']); ?></span>
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>

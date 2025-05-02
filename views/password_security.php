@@ -14,11 +14,7 @@ $username = $_SESSION['username'];
 
 // Fetch user data
 try {
-    $stmt = $pdo->prepare("
-        SELECT user_id, username, email, password, profile_picture
-        FROM users 
-        WHERE user_id = :user_id
-    ");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -28,8 +24,23 @@ try {
         exit;
     }
 
-    // Convert profile picture to base64 for display
-    $profile_picture_data = $user['profile_picture'] ? 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']) : 'profile.jpg';
+    // Fetch profile picture
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
+        } else {
+            $profile_picture_data = 'default_profile.jpg';
+        }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
 
     // Fetch favicon and logo
     $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
@@ -137,6 +148,7 @@ try {
             position: fixed;
             top: 0;
             bottom: 0;
+            overflow-y: auto;
         }
 
         .sidebar img.logo {
@@ -149,12 +161,21 @@ try {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s, transform 0.2s;
+            transition: transform 0.3s, color 0.3s;
         }
 
         .sidebar a:hover {
             color: #4CAF50;
-            transform: scale(1.1);
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .sidebar a.active {
+            color: #4CAF50;
         }
 
         .main-content {
@@ -170,9 +191,8 @@ try {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 40px;
             width: 100%;
-            max-width: 1200px;
             position: relative;
         }
 
@@ -181,7 +201,25 @@ try {
             color: #4CAF50;
         }
 
-        .header .search-bar {
+        .header .notification-search {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .notification-search .notification {
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .header .notification-search .notification:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
+        .header .notification-search .search-bar {
             display: flex;
             align-items: center;
             background: #fff;
@@ -192,15 +230,21 @@ try {
             width: 300px;
         }
 
-        .header .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 100%;
+        .header .notification-search .search-bar i {
+            margin-right: 10px;
+            color: #666;
             font-size: 16px;
         }
 
-        .header .search-bar .search-results {
+        .header .notification-search .search-bar input {
+            border: none;
+            outline: none;
+            padding: 5px;
+            width: 90%;
+            font-size: 16px;
+        }
+
+        .header .notification-search .search-bar .search-results {
             position: absolute;
             top: 50px;
             left: 0;
@@ -212,11 +256,11 @@ try {
             z-index: 10;
         }
 
-        .header .search-bar .search-results.active {
+        .header .notification-search .search-bar .search-results.active {
             display: block;
         }
 
-        .header .search-bar .search-results a {
+        .header .notification-search .search-bar .search-results a {
             display: block;
             padding: 12px;
             color: #333;
@@ -225,7 +269,7 @@ try {
             font-size: 16px;
         }
 
-        .header .search-bar .search-results a:hover {
+        .header .notification-search .search-bar .search-results a:hover {
             background: #e0e7ff;
         }
 
@@ -289,7 +333,7 @@ try {
         .account-nav {
             width: 100%;
             max-width: 800px;
-            background: #fff;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
@@ -297,6 +341,12 @@ try {
             display: flex;
             justify-content: space-around;
             gap: 10px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .account-nav a {
@@ -320,7 +370,7 @@ try {
         }
 
         .account-nav a.active {
-            background: rgb(187, 235, 191);
+            background: #BBEBBF;
             color: #4CAF50;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
@@ -339,18 +389,19 @@ try {
         }
 
         .account-section {
-            background: #E8F5E9;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             padding: 30px;
             border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
             width: 100%;
             max-width: 800px;
             margin-bottom: 30px;
+            animation: fadeIn 0.5s ease-in;
         }
 
         .account-section h2 {
             font-size: 28px;
-            color: #4CAF50;
+            color: #2E7D32;
             margin-bottom: 25px;
             display: flex;
             align-items: center;
@@ -358,7 +409,7 @@ try {
         }
 
         .account-section h2 i {
-            color: #4CAF50;
+            color: #2E7D32;
         }
 
         .account-section .error {
@@ -499,6 +550,7 @@ try {
 
         .account-section button.cancel {
             background: #666;
+            font-weight: bold;
         }
 
         .account-section button.cancel:hover {
@@ -534,6 +586,7 @@ try {
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
+                z-index: 100;
             }
 
             .sidebar img.logo {
@@ -552,31 +605,52 @@ try {
             }
 
             .header {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-direction: row;
+                align-items: center;
                 gap: 15px;
+                width: 100%;
             }
 
             .header h1 {
-                font-size: 28px;
+                font-size: 24px;
             }
 
-            .header .search-bar {
+            .header .notification-search {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                width: auto;
+                flex-grow: 1;
+            }
+
+            .header .notification-search .notification {
+                font-size: 20px;
+                flex-shrink: 0;
+            }
+
+            .header .notification-search .search-bar {
                 width: 100%;
+                max-width: 200px;
                 padding: 5px 10px;
+                flex-grow: 1;
             }
 
-            .header .search-bar input {
-                width: 100%;
+            .header .notification-search .search-bar i {
+                font-size: 14px;
+                margin-right: 5px;
+            }
+
+            .header .notification-search .search-bar input {
                 font-size: 14px;
             }
 
-            .header .search-bar .search-results {
+            .header .notification-search .search-bar .search-results {
                 top: 40px;
             }
 
             .header .profile {
                 margin-top: 0;
+                flex-shrink: 0;
             }
 
             .header .profile img {
@@ -586,6 +660,7 @@ try {
 
             .header .profile span {
                 font-size: 16px;
+                display: none; /* Hide the name to save space */
             }
 
             .profile-dropdown {
@@ -654,6 +729,89 @@ try {
                 font-size: 14px;
             }
         }
+
+        /* Additional media query for very small screens */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header .notification-search {
+                gap: 5px;
+            }
+
+            .header .notification-search .notification {
+                font-size: 18px;
+            }
+
+            .header .notification-search .search-bar {
+                max-width: 150px;
+                padding: 4px 8px;
+            }
+
+            .header .notification-search .search-bar i {
+                font-size: 12px;
+                margin-right: 4px;
+            }
+
+            .header .notification-search .search-bar input {
+                font-size: 12px;
+            }
+
+            .header .profile img {
+                width: 35px;
+                height: 35px;
+            }
+
+            .account-section {
+                padding: 15px;
+            }
+
+            .account-section h2 {
+                font-size: 20px;
+            }
+
+            .account-nav a {
+                font-size: 12px;
+                padding: 6px 8px;
+            }
+
+            .account-nav a i {
+                font-size: 12px;
+            }
+
+            .account-section label {
+                font-size: 12px;
+            }
+
+            .account-section input[type="password"],
+            .account-section input[type="text"] {
+                font-size: 12px;
+                padding: 8px;
+            }
+
+            .account-section .field-error {
+                font-size: 10px;
+            }
+
+            .account-section .password-strength {
+                font-size: 10px;
+            }
+
+            .account-section .password-wrapper .toggle-password {
+                font-size: 12px;
+            }
+
+            .account-section input[type="submit"],
+            .account-section button {
+                font-size: 12px;
+                padding: 8px;
+            }
+
+            .error-message {
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -661,13 +819,13 @@ try {
         <div class="sidebar">
             <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
-            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
-            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
-            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
-            <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
-            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="events.php" title="Events"><i class="fas fa-calendar-days"></i></a>
+            <a href="history.php" title="History"><i class="fas fa-clock"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -675,12 +833,16 @@ try {
             <?php endif; ?>
             <div class="header">
                 <h1>Password & Security</h1>
-                <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
-                    <div class="search-results" id="searchResults"></div>
+                <div class="notification-search">
+                    <div class="notification"><i class="fas fa-bell"></i></div>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search" id="searchInput">
+                        <div class="search-results" id="searchResults"></div>
+                    </div>
                 </div>
                 <div class="profile" id="profileBtn">
-                    <span><?php echo htmlspecialchars($username); ?></span>
+                    <span><?php echo htmlspecialchars($user['first_name']); ?></span>
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
@@ -697,7 +859,9 @@ try {
             </div>
             <div class="account-section">
                 <h2><i class="fas fa-lock"></i> Password & Security</h2>
-                <?php if ($password_success): ?>
+                <?php if ($password_error): ?>
+                    <div class="error"><?php echo htmlspecialchars($password_error); ?></div>
+                <?php elseif ($password_success): ?>
                     <div class="success"><?php echo htmlspecialchars($password_success); ?></div>
                 <?php endif; ?>
                 <form method="POST" action="">

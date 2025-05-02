@@ -345,7 +345,7 @@ try {
             border-radius: 20px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: transform 0.5s;
         }
 
         .stat-box:hover {
@@ -415,11 +415,14 @@ try {
             height: 120px;
             margin: 0 auto;
             position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             text-align: center;
         }
 
         .stat-box .rank-icon i {
-            font-size: 80px;
+            font-size: 90px;
             color: #FFD700; /* Gold color for trophy */
             transition: transform 0.3s;
         }
@@ -430,11 +433,11 @@ try {
 
         .stat-box .rank-icon .rank {
             position: absolute;
-            top: 50%;
+            top: 40%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 20px;
-            color: #4CAF50;
+            font-size: 25px;
+            color:rgb(2, 58, 4);
             font-weight: bold;
         }
 

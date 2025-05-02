@@ -35,7 +35,7 @@ $event_total = 0;
 try {
     // Fetch user data including profile picture
     $stmt = $pdo->prepare("
-        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id 
+        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.first_name 
         FROM users u 
         WHERE u.user_id = :user_id
     ");
@@ -261,6 +261,7 @@ try {
             position: fixed;
             top: 0;
             bottom: 0;
+            overflow-y: auto;
         }
 
         .sidebar img.logo {
@@ -273,12 +274,17 @@ try {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s, transform 0.2s;
+            transition: transform 0.3s, color 0.3s;
         }
 
         .sidebar a:hover {
             color: #4CAF50;
-            transform: scale(1.1);
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
 
         .sidebar a.active {
@@ -298,9 +304,8 @@ try {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 40px;
             width: 100%;
-            max-width: 1200px;
             position: relative;
         }
 
@@ -309,7 +314,25 @@ try {
             color: #4CAF50;
         }
 
-        .header .search-bar {
+        .header .notification-search {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .notification-search .notification {
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .header .notification-search .notification:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
+        .header .notification-search .search-bar {
             display: flex;
             align-items: center;
             background: #fff;
@@ -320,15 +343,21 @@ try {
             width: 300px;
         }
 
-        .header .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 100%;
+        .header .notification-search .search-bar i {
+            margin-right: 10px;
+            color: #666;
             font-size: 16px;
         }
 
-        .header .search-bar .search-results {
+        .header .notification-search .search-bar input {
+            border: none;
+            outline: none;
+            padding: 5px;
+            width: 90%;
+            font-size: 16px;
+        }
+
+        .header .notification-search .search-bar .search-results {
             position: absolute;
             top: 50px;
             left: 0;
@@ -340,11 +369,11 @@ try {
             z-index: 10;
         }
 
-        .header .search-bar .search-results.active {
+        .header .notification-search .search-bar .search-results.active {
             display: block;
         }
 
-        .header .search-bar .search-results a {
+        .header .notification-search .search-bar .search-results a {
             display: block;
             padding: 12px;
             color: #333;
@@ -353,7 +382,7 @@ try {
             font-size: 16px;
         }
 
-        .header .search-bar .search-results a:hover {
+        .header .notification-search .search-bar .search-results a:hover {
             background: #e0e7ff;
         }
 
@@ -415,21 +444,27 @@ try {
         }
 
         .history-section {
-            background: #E8F5E9;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             padding: 30px;
             border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
             width: 100%;
             max-width: 1200px;
             margin-bottom: 30px;
             display: flex;
             flex-direction: column;
             gap: 20px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .history-section h2 {
             font-size: 28px;
-            color: #4CAF50;
+            color: #2E7D32;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
@@ -465,7 +500,7 @@ try {
         }
 
         .history-nav a.active {
-            background: rgb(187, 235, 191);
+            background: #BBEBBF;
             color: #4CAF50;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
@@ -488,34 +523,86 @@ try {
             gap: 15px;
             margin-bottom: 20px;
             align-items: center;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
         .filter-bar label {
             font-size: 16px;
-            color: #666;
+            color: #2E7D32;
+            font-weight: 500;
+        }
+
+        .filter-bar .date-input-container {
+            position: relative;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-bar .date-input-container i {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #4CAF50;
+            font-size: 16px;
+            pointer-events: none;
         }
 
         .filter-bar input[type="date"] {
-            padding: 8px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
+            width: 100%;
+            padding: 10px 10px 10px 35px;
+            border: 1px solid #4CAF50;
+            border-radius: 8px;
             font-size: 14px;
+            background: #fff;
+            color: #333;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
+            opacity: 0;
+        }
+
+        .filter-bar input[type="date"]:hover {
+            border-color: #388E3C;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+        }
+
+        .filter-bar input[type="date"]:focus {
+            outline: none;
+            border-color: #388E3C;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
         }
 
         .filter-bar button {
-            background: #4CAF50;
+            background: linear-gradient(135deg, #4CAF50, #388E3C);
             color: #fff;
             border: none;
-            padding: 8px 16px;
-            border-radius: 5px;
+            padding: 10px 20px;
+            border-radius: 8px;
             font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            transition: background 0.3s, transform 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.1s, box-shadow 0.3s;
+        }
+
+        .filter-bar button i {
+            font-size: 16px;
         }
 
         .filter-bar button:hover {
-            background: #388E3C;
-            transform: scale(1.02);
+            transform: scale(1.03);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .filter-bar button:active {
+            transform: scale(0.98);
         }
 
         .history-list {
@@ -550,7 +637,15 @@ try {
             padding: 15px;
             border-radius: 10px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            transition: transform 0.2s;
+            transition: transform 0.5s;
+        }
+
+        .no-data {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            font-size: 16px;
+            margin-top: 20px;
         }
 
         .history-card:hover {
@@ -655,6 +750,7 @@ try {
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
+                z-index: 100;
             }
 
             .sidebar img.logo {
@@ -673,31 +769,52 @@ try {
             }
 
             .header {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-direction: row;
+                align-items: center;
                 gap: 15px;
+                width: 100%;
             }
 
             .header h1 {
-                font-size: 28px;
+                font-size: 24px;
             }
 
-            .header .search-bar {
+            .header .notification-search {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                width: auto;
+                flex-grow: 1;
+            }
+
+            .header .notification-search .notification {
+                font-size: 20px;
+                flex-shrink: 0;
+            }
+
+            .header .notification-search .search-bar {
                 width: 100%;
+                max-width: 200px;
                 padding: 5px 10px;
+                flex-grow: 1;
             }
 
-            .header .search-bar input {
-                width: 100%;
+            .header .notification-search .search-bar i {
+                font-size: 14px;
+                margin-right: 5px;
+            }
+
+            .header .notification-search .search-bar input {
                 font-size: 14px;
             }
 
-            .header .search-bar .search-results {
+            .header .notification-search .search-bar .search-results {
                 top: 40px;
             }
 
             .header .profile {
                 margin-top: 0;
+                flex-shrink: 0;
             }
 
             .header .profile img {
@@ -707,6 +824,7 @@ try {
 
             .header .profile span {
                 font-size: 16px;
+                display: none; /* Hide the name to save space */
             }
 
             .profile-dropdown {
@@ -739,23 +857,36 @@ try {
 
             .filter-bar {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: stretch;
+                padding: 10px;
+                gap: 10px;
             }
 
             .filter-bar label {
                 font-size: 14px;
             }
 
+            .filter-bar .date-input-container {
+                min-width: 100%;
+            }
+
             .filter-bar input[type="date"] {
-                width: 100%;
                 font-size: 14px;
-                padding: 8px;
+                padding: 8px 8px 8px 30px;
+            }
+
+            .filter-bar .date-input-container i {
+                font-size: 14px;
+                left: 8px;
             }
 
             .filter-bar button {
                 font-size: 14px;
                 padding: 8px 15px;
-                width: 100%;
+            }
+
+            .filter-bar button i {
+                font-size: 14px;
             }
 
             .history-card {
@@ -775,20 +906,112 @@ try {
                 font-size: 14px;
             }
         }
+
+        /* Additional media query for very small screens */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header .notification-search {
+                gap: 5px;
+            }
+
+            .header .notification-search .notification {
+                font-size: 18px;
+            }
+
+            .header .notification-search .search-bar {
+                max-width: 150px;
+                padding: 4px 8px;
+            }
+
+            .header .notification-search .search-bar i {
+                font-size: 12px;
+                margin-right: 4px;
+            }
+
+            .header .notification-search .search-bar input {
+                font-size: 12px;
+            }
+
+            .header .profile img {
+                width: 35px;
+                height: 35px;
+            }
+
+            .history-section {
+                padding: 15px;
+            }
+
+            .history-section h2 {
+                font-size: 20px;
+            }
+
+            .history-nav a {
+                font-size: 12px;
+                padding: 6px 8px;
+            }
+
+            .history-nav a i {
+                font-size: 12px;
+            }
+
+            .filter-bar {
+                padding: 8px;
+                gap: 8px;
+            }
+
+            .filter-bar label {
+                font-size: 12px;
+            }
+
+            .filter-bar input[type="date"] {
+                font-size: 12px;
+                padding: 6px 6px 6px 25px;
+            }
+
+            .filter-bar .date-input-container i {
+                font-size: 12px;
+                left: 6px;
+            }
+
+            .filter-bar button {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+
+            .filter-bar button i {
+                font-size: 12px;
+            }
+
+            .history-detail-item {
+                font-size: 12px;
+            }
+
+            .pagination a {
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+
+            .error-message {
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
-            <img src="<?php echo htmlspecialchars($logo_base64); ?>" alt="Logo" class="logo">
+            <img src="<?php echo $logo_base64; ?>" alt="Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
-            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
-            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
-            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
-            <a href="events.php" title="Events"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History" class="active"><i class="fas fa-history"></i></a>
-            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="events.php" title="Events"><i class="fas fa-calendar-days"></i></a>
+            <a href="history.php" title="History" class="active"><i class="fas fa-clock"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
         </div>
 
         <div class="main-content">
@@ -797,13 +1020,17 @@ try {
             <?php endif; ?>
             <div class="header">
                 <h1>History</h1>
-                <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
-                    <div class="search-results" id="searchResults"></div>
+                <div class="notification-search">
+                    <div class="notification"><i class="fas fa-bell"></i></div>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search" id="searchInput">
+                        <div class="search-results" id="searchResults"></div>
+                    </div>
                 </div>
                 <div class="profile" id="profileBtn">
-                    <span><?php echo htmlspecialchars($username); ?></span>
-                    <img src="<?php echo htmlspecialchars($profile_picture_data); ?>" alt="Profile">
+                    <span><?php echo htmlspecialchars($user['first_name']); ?></span>
+                    <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
                         <a href="account_settings.php">Account</a>
@@ -816,29 +1043,35 @@ try {
                 <h2>
                     <?php
                     if ($active_tab === 'planting') echo '<i class="fas fa-seedling"></i> Planting History';
-                    elseif ($active_tab === 'event') echo '<i class="fas fa-calendar-alt"></i> Event History';
+                    elseif ($active_tab === 'event') echo '<i class="fas fa-calendar-days"></i> Event History';
                     else echo '<i class="fas fa-gift"></i> Reward History';
                     ?>
                 </h2>
 
                 <div class="history-nav">
                     <a href="?tab=planting" class="<?php echo $active_tab === 'planting' ? 'active' : ''; ?>"><i class="fas fa-seedling"></i> Planting History</a>
-                    <a href="?tab=event" class="<?php echo $active_tab === 'event' ? 'active' : ''; ?>"><i class="fas fa-calendar-alt"></i> Event History</a>
+                    <a href="?tab=event" class="<?php echo $active_tab === 'event' ? 'active' : ''; ?>"><i class="fas fa-calendar-days"></i> Event History</a>
                     <a href="?tab=reward" class="<?php echo $active_tab === 'reward' ? 'active' : ''; ?>"><i class="fas fa-gift"></i> Reward History</a>
                 </div>
 
                 <div class="filter-bar">
                     <label for="start_date">From:</label>
-                    <input type="date" id="start_date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>">
+                    <div class="date-input-container">
+                        <i class="fas fa-calendar-days"></i>
+                        <input type="date" id="start_date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>">
+                    </div>
                     <label for="end_date">To:</label>
-                    <input type="date" id="end_date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>">
-                    <button onclick="applyDateFilter()">Filter</button>
+                    <div class="date-input-container">
+                        <i class="fas fa-calendar-days"></i>
+                        <input type="date" id="end_date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>">
+                    </div>
+                    <button onclick="applyDateFilter()"><i class="fas fa-filter"></i> Filter</button>
                 </div>
 
                 <div class="history-list">
                     <?php if ($active_tab === 'planting'): ?>
                         <?php if (empty($planting_history)): ?>
-                            <p>No planting history found.</p>
+                            <p class="no-data">No planting history found.</p>
                         <?php else: ?>
                             <?php foreach ($planting_history as $entry): ?>
                                 <div class="history-card">
@@ -848,7 +1081,7 @@ try {
                                             Trees Planted: <?php echo htmlspecialchars($entry['trees_planted']); ?>
                                         </div>
                                         <div class="history-detail-item">
-                                            <i class="fas fa-map-marker-alt"></i>
+                                            <i class="fas fa-map-pin"></i>
                                             Location: <?php echo htmlspecialchars($entry['location']); ?>
                                         </div>
                                         <div class="history-detail-item">
@@ -856,7 +1089,7 @@ try {
                                             Status: <span class="status-<?php echo htmlspecialchars($entry['status']); ?>"><?php echo htmlspecialchars(ucfirst($entry['status'])); ?></span>
                                         </div>
                                         <div class="history-detail-item">
-                                            <i class="fas fa-calendar-alt"></i>
+                                            <i class="fas fa-calendar-days"></i>
                                             Date: <?php echo htmlspecialchars(date('F j, Y, g:i a', strtotime($entry['created_at']))); ?>
                                         </div>
                                     </div>
@@ -865,17 +1098,17 @@ try {
                         <?php endif; ?>
                     <?php elseif ($active_tab === 'event'): ?>
                         <?php if (empty($event_history)): ?>
-                            <p>No event history found.</p>
+                            <p class="no-data">No event history found.</p>
                         <?php else: ?>
                             <?php foreach ($event_history as $entry): ?>
                                 <div class="history-card">
                                     <div class="history-details">
                                         <div class="history-detail-item">
-                                            <i class="fas fa-calendar-alt"></i>
+                                            <i class="fas fa-calendar-days"></i>
                                             Event: <?php echo htmlspecialchars($entry['event_title']); ?>
                                         </div>
                                         <div class="history-detail-item">
-                                            <i class="fas fa-map-marker-alt"></i>
+                                            <i class="fas fa-map-pin"></i>
                                             Location: <?php echo htmlspecialchars($entry['location']); ?>
                                         </div>
                                         <div class="history-detail-item">
@@ -898,7 +1131,7 @@ try {
                         <?php endif; ?>
                     <?php else: ?>
                         <?php if (empty($reward_history)): ?>
-                            <p>No reward history found.</p>
+                            <p class="no-data">No reward history found.</p>
                         <?php else: ?>
                             <?php foreach ($reward_history as $entry): ?>
                                 <div class="history-card">
@@ -916,7 +1149,7 @@ try {
                                             Eco Points Used: <?php echo htmlspecialchars($entry['eco_points']); ?>
                                         </div>
                                         <div class="history-detail-item">
-                                            <i class="fas fa-calendar-alt"></i>
+                                            <i class="fas fa-calendar-days"></i>
                                             Date: <?php echo htmlspecialchars(date('F j, Y, g:i a', strtotime($entry['created_at']))); ?>
                                         </div>
                                     </div>
