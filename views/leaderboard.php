@@ -1017,7 +1017,6 @@ try {
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
-                        <div class="last-updated">Last Updated: <?php echo $barangay_last_updated; ?></div>
                         <a href="account_settings.php">Account</a>
                         <a href="logout.php">Logout</a>
                     </div>
