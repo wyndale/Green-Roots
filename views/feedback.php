@@ -24,6 +24,25 @@ $feedback_total = 0;
 $feedback_error = '';
 $feedback_success = '';
 
+// Check for session messages
+if (isset($_SESSION['feedback_success'])) {
+    $feedback_success = $_SESSION['feedback_success'];
+    unset($_SESSION['feedback_success']);
+}
+if (isset($_SESSION['feedback_error'])) {
+    $feedback_error = $_SESSION['feedback_error'];
+    unset($_SESSION['feedback_error']);
+}
+
+// Retrieve form inputs from session if available
+$form_inputs = isset($_SESSION['form_inputs']) ? $_SESSION['form_inputs'] : [
+    'category' => '',
+    'rating' => '',
+    'comments' => '',
+    'is_anonymous' => false
+];
+unset($_SESSION['form_inputs']);
+
 // Fetch user data
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
@@ -36,23 +55,23 @@ try {
         exit;
     }
 
-        // Fetch profile picture
-        if ($user['profile_picture']) {
-            $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
-        } elseif ($user['default_profile_asset_id']) {
-            $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
-            $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
-            $asset = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($asset && $asset['asset_data']) {
-                $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
-                $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
-            } else {
-                $profile_picture_data = 'default_profile.jpg';
-            }
+    // Fetch profile picture
+    if ($user['profile_picture']) {
+        $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
+    } elseif ($user['default_profile_asset_id']) {
+        $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
+        $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
+        $asset = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($asset && $asset['asset_data']) {
+            $mime_type = $asset['asset_type'] === 'default_profile' ? 'image/png' : 'image/jpeg';
+            $profile_picture_data = "data:$mime_type;base64," . base64_encode($asset['asset_data']);
         } else {
             $profile_picture_data = 'default_profile.jpg';
         }
+    } else {
+        $profile_picture_data = 'default_profile.jpg';
+    }
 
     // Fetch favicon and logo
     $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
@@ -78,7 +97,13 @@ try {
         $recent_submission = $stmt->fetchColumn();
 
         if ($recent_submission > 0) {
-            $feedback_error = 'You can only submit feedback once every 24 hours.';
+            $_SESSION['feedback_error'] = 'You can only submit feedback once every 24 hours.';
+            $_SESSION['form_inputs'] = [
+                'category' => $_POST['category'] ?? '',
+                'rating' => isset($_POST['rating']) ? (int)$_POST['rating'] : 0,
+                'comments' => trim($_POST['comments'] ?? ''),
+                'is_anonymous' => isset($_POST['is_anonymous'])
+            ];
         } else {
             $category = $_POST['category'] ?? '';
             $rating = isset($_POST['rating']) ? (int)$_POST['rating'] : 0;
@@ -87,13 +112,37 @@ try {
 
             // Validate inputs
             if (!in_array($category, ['bug', 'feature', 'general'])) {
-                $feedback_error = 'Please select a valid category.';
+                $_SESSION['feedback_error'] = 'Please select a valid category.';
+                $_SESSION['form_inputs'] = [
+                    'category' => '',
+                    'rating' => $rating,
+                    'comments' => $comments,
+                    'is_anonymous' => $is_anonymous
+                ];
             } elseif ($rating < 1 || $rating > 5) {
-                $feedback_error = 'Please provide a rating between 1 and 5.';
+                $_SESSION['feedback_error'] = 'Please provide a rating between 1 and 5.';
+                $_SESSION['form_inputs'] = [
+                    'category' => $category,
+                    'rating' => 0,
+                    'comments' => $comments,
+                    'is_anonymous' => $is_anonymous
+                ];
             } elseif (empty($comments)) {
-                $feedback_error = 'Comments are required.';
+                $_SESSION['feedback_error'] = 'Comments are required.';
+                $_SESSION['form_inputs'] = [
+                    'category' => $category,
+                    'rating' => $rating,
+                    'comments' => '',
+                    'is_anonymous' => $is_anonymous
+                ];
             } elseif (strlen($comments) > 1000) {
-                $feedback_error = 'Comments cannot exceed 1000 characters.';
+                $_SESSION['feedback_error'] = 'Comments cannot exceed 1000 characters.';
+                $_SESSION['form_inputs'] = [
+                    'category' => $category,
+                    'rating' => $rating,
+                    'comments' => $comments,
+                    'is_anonymous' => $is_anonymous
+                ];
             } else {
                 // Insert feedback into the database
                 $stmt = $pdo->prepare("
@@ -115,9 +164,13 @@ try {
                 ");
                 $stmt->execute(['user_id' => $user_id]);
 
-                $feedback_success = 'Thanks you! Your feedback was submitted successfully—we appreciate it.';
+                $_SESSION['feedback_success'] = 'Thanks you! Your feedback was submitted successfully—we appreciate it.';
             }
         }
+
+        // Redirect to prevent form resubmission
+        header('Location: feedback.php?tab=submit');
+        exit;
     }
 
     // Fetch Feedback History with Pagination
@@ -955,7 +1008,7 @@ try {
                 font-size: 14px;
             }
 
-            .header .notification-search .search-bar .search-results {
+            .header . developmental-search .search-bar .search-results {
                 top: 40px;
             }
 
@@ -1272,34 +1325,34 @@ try {
                             <label for="category"><i class="fas fa-list"></i> Category</label>
                             <select id="category" name="category" required>
                                 <option value="">Select a category</option>
-                                <option value="bug">Bug Report</option>
-                                <option value="feature">Feature Request</option>
-                                <option value="general">General Feedback</option>
+                                <option value="bug" <?php echo $form_inputs['category'] === 'bug' ? 'selected' : ''; ?>>Bug Report</option>
+                                <option value="feature" <?php echo $form_inputs['category'] === 'feature' ? 'selected' : ''; ?>>Feature Request</option>
+                                <option value="general" <?php echo $form_inputs['category'] === 'general' ? 'selected' : ''; ?>>General Feedback</option>
                             </select>
                         </div>
                         <div class="rating-group">
                             <label><i class="fas fa-star"></i> Rating</label>
                             <div class="stars">
-                                <input type="radio" id="star5" name="rating" value="5" required>
+                                <input type="radio" id="star5" name="rating" value="5" <?php echo $form_inputs['rating'] == 5 ? 'checked' : ''; ?> required>
                                 <label for="star5">★</label>
-                                <input type="radio" id="star4" name="rating" value="4">
+                                <input type="radio" id="star4" name="rating" value="4" <?php echo $form_inputs['rating'] == 4 ? 'checked' : ''; ?>>
                                 <label for="star4">★</label>
-                                <input type="radio" id="star3" name="rating" value="3">
+                                <input type="radio" id="star3" name="rating" value="3" <?php echo $form_inputs['rating'] == 3 ? 'checked' : ''; ?>>
                                 <label for="star3">★</label>
-                                <input type="radio" id="star2" name="rating" value="2">
+                                <input type="radio" id="star2" name="rating" value="2" <?php echo $form_inputs['rating'] == 2 ? 'checked' : ''; ?>>
                                 <label for="star2">★</label>
-                                <input type="radio" id="star1" name="rating" value="1">
+                                <input type="radio" id="star1" name="rating" value="1" <?php echo $form_inputs['rating'] == 1 ? 'checked' : ''; ?>>
                                 <label for="star1">★</label>
                             </div>
                             <span class="tooltip">Rate your experience (1-5 stars)</span>
                         </div>
                         <div class="form-group">
                             <label for="comments"><i class="fas fa-comment"></i> Comments</label>
-                            <textarea id="comments" name="comments" required maxlength="1000" oninput="updateCharCounter()"></textarea>
-                            <span id="charCounter" class="char-counter">0/1000</span>
+                            <textarea id="comments" name="comments" required maxlength="1000" oninput="updateCharCounter()"><?php echo htmlspecialchars($form_inputs['comments']); ?></textarea>
+                            <span id="charCounter" class="char-counter"><?php echo strlen($form_inputs['comments']); ?>/1000</span>
                         </div>
                         <div class="form-group checkbox">
-                            <input type="checkbox" id="is_anonymous" name="is_anonymous">
+                            <input type="checkbox" id="is_anonymous" name="is_anonymous" <?php echo $form_inputs['is_anonymous'] ? 'checked' : ''; ?>>
                             <label for="is_anonymous"><i class="fas fa-user-secret"></i> Submit anonymously</label>
                             <span class="tooltip">Your identity will not be linked to this feedback</span>
                         </div>
@@ -1352,19 +1405,15 @@ try {
                 <?php endif; ?>
             </div>
             <!-- Modal for Success/Error Messages -->
-            <?php if ($feedback_success): ?>
+            <?php if ($feedback_success || $feedback_error): ?>
                 <div class="modal active" id="feedbackModal">
                     <div class="modal-content">
                         <span class="close-btn" onclick="closeModal('feedbackModal')">×</span>
-                        <div class="success-message"><?php echo htmlspecialchars($feedback_success); ?></div>
-                        <button onclick="closeModal('feedbackModal')">Close</button>
-                    </div>
-                </div>
-            <?php elseif ($feedback_error): ?>
-                <div class="modal active" id="feedbackModal">
-                    <div class="modal-content">
-                        <span class="close-btn" onclick="closeModal('feedbackModal')">×</span>
-                        <div class="error-message"><?php echo htmlspecialchars($feedback_error); ?></div>
+                        <?php if ($feedback_success): ?>
+                            <div class="success-message"><?php echo htmlspecialchars($feedback_success); ?></div>
+                        <?php elseif ($feedback_error): ?>
+                            <div class="error-message"><?php echo htmlspecialchars($feedback_error); ?></div>
+                        <?php endif; ?>
                         <button onclick="closeModal('feedbackModal')">Close</button>
                     </div>
                 </div>

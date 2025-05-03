@@ -12,6 +12,21 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
+// Initialize variables
+$payment_error = '';
+$payment_success = '';
+$field_errors = [];
+
+// Check for session messages
+if (isset($_SESSION['payment_success'])) {
+    $payment_success = $_SESSION['payment_success'];
+    unset($_SESSION['payment_success']);
+}
+if (isset($_SESSION['field_errors'])) {
+    $field_errors = $_SESSION['field_errors'];
+    unset($_SESSION['field_errors']);
+}
+
 // Fetch user data
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
@@ -54,9 +69,6 @@ try {
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Handle PayPal Email Update
-    $payment_error = '';
-    $payment_success = '';
-    $field_errors = [];
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_payment'])) {
         $paypal_email = trim($_POST['paypal_email']);
 
@@ -74,8 +86,16 @@ try {
             ]);
 
             $user['paypal_email'] = $paypal_email;
-            $payment_success = 'Payment method updated successfully!';
+            $_SESSION['payment_success'] = 'Payment method updated successfully!';
         }
+
+        if (!empty($field_errors)) {
+            $_SESSION['field_errors'] = $field_errors;
+        }
+
+        // Redirect to prevent form resubmission
+        header('Location: payment_methods.php');
+        exit;
     }
 
     // Handle PayPal Email Removal
@@ -83,7 +103,11 @@ try {
         $stmt = $pdo->prepare("UPDATE users SET paypal_email = NULL WHERE user_id = :user_id");
         $stmt->execute(['user_id' => $user_id]);
         $user['paypal_email'] = NULL;
-        $payment_success = 'Payment method removed successfully!';
+        $_SESSION['payment_success'] = 'Payment method removed successfully!';
+
+        // Redirect to prevent form resubmission
+        header('Location: payment_methods.php');
+        exit;
     }
 
 } catch (PDOException $e) {
@@ -852,9 +876,7 @@ try {
             </div>
             <div class="account-section">
                 <h2><i class="fas fa-credit-card"></i> Payment Methods</h2>
-                <?php if ($payment_error): ?>
-                    <div class="error"><?php echo htmlspecialchars($payment_error); ?></div>
-                <?php elseif ($payment_success): ?>
+                <?php if ($payment_success): ?>
                     <div class="success"><?php echo htmlspecialchars($payment_success); ?></div>
                 <?php endif; ?>
                 <div class="current-method">

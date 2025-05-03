@@ -12,6 +12,20 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
+// Initialize variables
+$profile_error = '';
+$profile_success = '';
+
+// Check for session messages
+if (isset($_SESSION['profile_success'])) {
+    $profile_success = $_SESSION['profile_success'];
+    unset($_SESSION['profile_success']);
+}
+if (isset($_SESSION['profile_error'])) {
+    $profile_error = $_SESSION['profile_error'];
+    unset($_SESSION['profile_error']);
+}
+
 // Fetch user data
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
@@ -54,16 +68,12 @@ try {
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Handle Profile Picture Update
-    $profile_error = '';
-    $profile_success = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         if (isset($_POST['remove_picture']) && $_POST['remove_picture'] === '1') {
             // Remove profile picture
             $stmt = $pdo->prepare("UPDATE users SET profile_picture = NULL WHERE user_id = :user_id");
             $stmt->execute(['user_id' => $user_id]);
-            $user['profile_picture'] = null;
-            $profile_picture_data = 'profile.jpg';
-            $profile_success = 'Profile picture removed successfully!';
+            $_SESSION['profile_success'] = 'Profile picture removed successfully!';
         } elseif (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] !== UPLOAD_ERR_NO_FILE) {
             $file = $_FILES['profile_picture'];
             $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
@@ -71,9 +81,9 @@ try {
 
             // Validate the file
             if (!in_array($file['type'], $allowed_types)) {
-                $profile_error = 'Only JPEG, PNG, and GIF files are allowed.';
+                $_SESSION['profile_error'] = 'Only JPEG, PNG, and GIF files are allowed.';
             } elseif ($file['size'] > $max_size) {
-                $profile_error = 'File size must be less than 20MB.';
+                $_SESSION['profile_error'] = 'File size must be less than 20MB.';
             } else {
                 // Read the file content as binary data
                 $image_data = file_get_contents($file['tmp_name']);
@@ -83,17 +93,18 @@ try {
                     $stmt->bindParam(':profile_picture', $image_data, PDO::PARAM_LOB);
                     $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
                     $stmt->execute();
-
-                    $user['profile_picture'] = $image_data;
-                    $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($image_data);
-                    $profile_success = 'Profile picture updated successfully!';
+                    $_SESSION['profile_success'] = 'Profile picture updated successfully!';
                 } else {
-                    $profile_error = 'Failed to read the uploaded file. Please try again.';
+                    $_SESSION['profile_error'] = 'Failed to read the uploaded file. Please try again.';
                 }
             }
         } else {
-            $profile_error = 'Please select a file to upload.';
+            $_SESSION['profile_error'] = 'Please select a file to upload.';
         }
+
+        // Redirect to prevent form resubmission
+        header('Location: profile.php');
+        exit;
     }
 
 } catch (PDOException $e) {

@@ -12,6 +12,29 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
+// Initialize variables
+$account_error = '';
+$account_success = '';
+$field_errors = [];
+
+// Check for session messages
+if (isset($_SESSION['account_success'])) {
+    $account_success = $_SESSION['account_success'];
+    unset($_SESSION['account_success']);
+}
+if (isset($_SESSION['account_error'])) {
+    $account_error = $_SESSION['account_error'];
+    unset($_SESSION['account_error']);
+}
+if (isset($_SESSION['field_errors'])) {
+    $field_errors = $_SESSION['field_errors'];
+    unset($_SESSION['field_errors']);
+}
+
+// Retrieve form inputs from session if available
+$form_inputs = isset($_SESSION['form_inputs']) ? $_SESSION['form_inputs'] : [];
+unset($_SESSION['form_inputs']);
+
 // Fetch user data
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
@@ -66,15 +89,21 @@ try {
     }
 
     // Handle Account Settings update
-    $account_error = '';
-    $account_success = '';
-    $field_errors = [];
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
         $new_username = trim($_POST['username']);
         $new_email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
         $new_phone = trim($_POST['phone_number']);
         $new_first_name = trim($_POST['first_name']);
         $new_last_name = trim($_POST['last_name']);
+
+        // Store form inputs for repopulation
+        $form_inputs = [
+            'username' => $new_username,
+            'email' => $new_email,
+            'phone_number' => $new_phone,
+            'first_name' => $new_first_name,
+            'last_name' => $new_last_name
+        ];
 
         // Validate inputs
         if (empty($new_username)) {
@@ -109,7 +138,8 @@ try {
                 'user_id' => $user_id
             ]);
             if ($stmt->fetchColumn() > 0) {
-                $account_error = 'Username or email already taken.';
+                $_SESSION['account_error'] = 'Username or email already taken.';
+                $_SESSION['form_inputs'] = $form_inputs;
             } else {
                 // Update user information
                 $stmt = $pdo->prepare("
@@ -129,16 +159,16 @@ try {
 
                 // Update session username
                 $_SESSION['username'] = $new_username;
-                $username = $new_username;
-                $user['username'] = $new_username;
-                $user['email'] = $new_email;
-                $user['phone_number'] = $new_phone;
-                $user['first_name'] = $new_first_name;
-                $user['last_name'] = $new_last_name;
-
-                $account_success = 'Account settings updated successfully!';
+                $_SESSION['account_success'] = 'Account settings updated successfully!';
             }
+        } else {
+            $_SESSION['field_errors'] = $field_errors;
+            $_SESSION['form_inputs'] = $form_inputs;
         }
+
+        // Redirect to prevent form resubmission
+        header('Location: account_settings.php');
+        exit;
     }
 
 } catch (PDOException $e) {
@@ -906,14 +936,14 @@ try {
                     <div class="form-row">
                         <div class="form-group">
                             <label for="first_name"><i class="fas fa-user"></i> First Name</label>
-                            <input type="text" id="first_name" name="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>" required>
+                            <input type="text" id="first_name" name="first_name" value="<?php echo htmlspecialchars($form_inputs['first_name'] ?? ($user['first_name'] ?? '')); ?>" required>
                             <?php if (isset($field_errors['first_name'])): ?>
                                 <div class="field-error show"><?php echo htmlspecialchars($field_errors['first_name']); ?></div>
                             <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label for="last_name"><i class="fas fa-user"></i> Last Name</label>
-                            <input type="text" id="last_name" name="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>" required>
+                            <input type="text" id="last_name" name="last_name" value="<?php echo htmlspecialchars($form_inputs['last_name'] ?? ($user['last_name'] ?? '')); ?>" required>
                             <?php if (isset($field_errors['last_name'])): ?>
                                 <div class="field-error show"><?php echo htmlspecialchars($field_errors['last_name']); ?></div>
                             <?php endif; ?>
@@ -921,21 +951,21 @@ try {
                     </div>
                     <div class="form-group">
                         <label for="username"><i class="fas fa-at"></i> Username</label>
-                        <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($user['username']); ?>" required>
+                        <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($form_inputs['username'] ?? ($user['username'] ?? '')); ?>" required>
                         <?php if (isset($field_errors['username'])): ?>
                             <div class="field-error show"><?php echo htmlspecialchars($field_errors['username']); ?></div>
                         <?php endif; ?>
                     </div>
                     <div class="form-group">
                         <label for="email"><i class="fas fa-envelope"></i> Email</label>
-                        <input type="email" id="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" required>
+                        <input type="email" id="email" name="email" value="<?php echo htmlspecialchars($form_inputs['email'] ?? ($user['email'] ?? '')); ?>" required>
                         <?php if (isset($field_errors['email'])): ?>
                             <div class="field-error show"><?php echo htmlspecialchars($field_errors['email']); ?></div>
                         <?php endif; ?>
                     </div>
                     <div class="form-group">
                         <label for="phone_number"><i class="fas fa-phone"></i> Phone Number (Optional)</label>
-                        <input type="text" id="phone_number" name="phone_number" value="<?php echo htmlspecialchars($user['phone_number'] ?? ''); ?>">
+                        <input type="text" id="phone_number" name="phone_number" value="<?php echo htmlspecialchars($form_inputs['phone_number'] ?? ($user['phone_number'] ?? '')); ?>">
                         <?php if (isset($field_errors['phone_number'])): ?>
                             <div class="field-error show"><?php echo htmlspecialchars($field_errors['phone_number']); ?></div>
                         <?php endif; ?>

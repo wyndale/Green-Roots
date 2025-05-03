@@ -91,7 +91,7 @@ try {
     $logo_data = $stmt->fetchColumn();
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
-    // Fetch planting site for validation (not display)
+    // Fetch planting site for validation
     $planting_site = getPlantingSite($pdo, $barangay_id);
 
     if (!$planting_site) {
@@ -112,9 +112,6 @@ try {
                 $submission_error = 'Invalid CSRF token. Please try again.';
             } else {
                 $trees_planted = filter_input(INPUT_POST, 'trees_planted', FILTER_VALIDATE_INT);
-                $latitude = filter_input(INPUT_POST, 'latitude', FILTER_VALIDATE_FLOAT);
-                $longitude = filter_input(INPUT_POST, 'longitude', FILTER_VALIDATE_FLOAT);
-                $location_accuracy = filter_input(INPUT_POST, 'location_accuracy', FILTER_VALIDATE_FLOAT);
                 $submission_notes = filter_input(INPUT_POST, 'submission_notes', FILTER_SANITIZE_SPECIAL_CHARS);
 
                 // Validate inputs
@@ -125,21 +122,18 @@ try {
                 } elseif (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
                     $submission_error = 'Please upload a photo of the tree planting. Error code: ' . ($_FILES['photo']['error'] ?? 'N/A');
                     error_log("File upload error for user $user_id: " . ($_FILES['photo']['error'] ?? 'No file uploaded'));
-                } elseif ($latitude === false || $longitude === false || $latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
-                    $submission_error = 'Unable to capture valid GPS coordinates. Please enable location services and try again.';
-                } elseif ($location_accuracy === false || $location_accuracy > 50) {
-                    $submission_error = 'Location accuracy is too low (must be within 50 meters). Please try again in an area with better GPS signal.';
                 } else {
                     // Validate photo
                     $file_tmp = $_FILES['photo']['tmp_name'];
                     $file_name = $_FILES['photo']['name'];
+                    $file_size = $_FILES['photo']['size'];
                     $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
                     $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
 
                     if (!in_array($file_ext, $allowed_exts)) {
                         $submission_error = 'Only JPG, JPEG, PNG, GIF, WEBP, BMP, HEIC, and HEIF files are allowed for tree planting photos.';
-                    } elseif ($_FILES['photo']['size'] > 50 * 1024 * 1024) {
-                        $submission_error = 'Photo size must be less than 50MB.';
+                    } elseif ($file_size > 10 * 1024 * 1024) { // Reduced limit to 10MB
+                        $submission_error = 'Photo size must be less than 10MB.';
                     } else {
                         // Check photo resolution
                         $image_info = @getimagesize($file_tmp);
@@ -151,11 +145,11 @@ try {
                             if ($width < 800 || $height < 600) {
                                 $submission_error = 'Photo resolution must be at least 800x600 pixels for clear validation.';
                             } else {
-                                // Read photo data
+                                // Read photo data with stricter validation
                                 $photo_data = file_get_contents($file_tmp);
-                                if ($photo_data === false) {
-                                    $submission_error = 'Failed to read photo data. Please try again.';
-                                    error_log("Failed to read photo data for user $user_id: $file_name");
+                                if ($photo_data === false || empty($photo_data)) {
+                                    $submission_error = 'Failed to read photo data. Please try a different image.';
+                                    error_log("Failed to read photo data for user $user_id: $file_name | Size: $file_size bytes");
                                 } else {
                                     // Generate photo hash
                                     $photo_hash = hash('sha256', $photo_data);
@@ -180,51 +174,26 @@ try {
                                             FROM submissions 
                                             WHERE user_id = :user_id 
                                             AND submitted_at >= NOW() - INTERVAL 24 HOUR
+                                            AND latitude IS NOT NULL
+                                            AND longitude IS NOT NULL
                                         ");
                                         $stmt->execute(['user_id' => $user_id]);
                                         $recent_locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         $proximity_note = '';
-                                        foreach ($recent_locations as $loc) {
-                                            $distance = haversine_distance($latitude, $longitude, $loc['latitude'], $loc['longitude']);
-                                            if ($distance < 0.1) { // 100 meters
-                                                $proximity_note = "Note: This submission is within 100 meters of a previous submission within the last 24 hours.";
-                                                break;
-                                            }
-                                        }
-
-                                        // Validate against planting site
-                                        $distance_to_site = haversine_distance($latitude, $longitude, $planting_site['latitude'], $planting_site['longitude']);
-                                        if ($distance_to_site > 0.2) { // 200 meters
-                                            $submission_error = 'Your location is too far from the designated planting site (must be within 200 meters).';
-                                            // Log suspicious activity
-                                            $stmt = $pdo->prepare("
-                                                INSERT INTO activities (user_id, description, activity_type)
-                                                VALUES (:user_id, :description, 'suspicious')
-                                            ");
-                                            $stmt->execute([
-                                                'user_id' => $user_id,
-                                                'description' => "Submission location too far from planting site: $distance_to_site km."
-                                            ]);
-                                        }
-
-                                        // Check photo timestamp via EXIF
                                         $exif = @exif_read_data($file_tmp);
-                                        $photo_timestamp = null;
-                                        if ($exif && isset($exif['DateTimeOriginal'])) {
-                                            $photo_timestamp = date('Y-m-d H:i:s', strtotime($exif['DateTimeOriginal']));
-                                            $time_diff = abs(strtotime('now') - strtotime($photo_timestamp));
-                                            if ($time_diff > 3600) {
-                                                $submission_error = 'Photo appears to be older than 1 hour. Please upload a recent photo.';
-                                            }
-                                        }
+                                        $latitude = null;
+                                        $longitude = null;
+                                        $is_flagged = 0;
 
-                                        // Validate geolocation against EXIF data
-                                        if (!$submission_error && $exif && isset($exif['GPSLatitude']) && isset($exif['GPSLongitude'])) {
-                                            $exif_lat = exif_to_decimal($exif['GPSLatitude'], $exif['GPSLatitudeRef']);
-                                            $exif_lon = exif_to_decimal($exif['GPSLongitude'], $exif['GPSLongitudeRef']);
-                                            $distance = haversine_distance($latitude, $longitude, $exif_lat, $exif_lon);
-                                            if ($distance > 0.1) {
-                                                $submission_error = 'Photo GPS coordinates do not match your current location (difference > 100 meters).';
+                                        // Extract GPS from photo EXIF data
+                                        if ($exif && isset($exif['GPSLatitude']) && isset($exif['GPSLongitude'])) {
+                                            $latitude = exif_to_decimal($exif['GPSLatitude'], $exif['GPSLatitudeRef']);
+                                            $longitude = exif_to_decimal($exif['GPSLongitude'], $exif['GPSLongitudeRef']);
+
+                                            // Validate against planting site using EXIF GPS
+                                            $distance_to_site = haversine_distance($latitude, $longitude, $planting_site['latitude'], $planting_site['longitude']);
+                                            if ($distance_to_site > 0.2) { // 200 meters
+                                                $submission_error = 'The photo location is too far from the designated planting site (must be within 200 meters).';
                                                 // Log suspicious activity
                                                 $stmt = $pdo->prepare("
                                                     INSERT INTO activities (user_id, description, activity_type)
@@ -232,15 +201,45 @@ try {
                                                 ");
                                                 $stmt->execute([
                                                     'user_id' => $user_id,
-                                                    'description' => "Geolocation mismatch detected in submission: $distance km difference"
+                                                    'description' => "Photo location too far from planting site: $distance_to_site km."
                                                 ]);
+                                            } else {
+                                                // Check proximity to recent submissions
+                                                foreach ($recent_locations as $loc) {
+                                                    $distance = haversine_distance($latitude, $longitude, $loc['latitude'], $loc['longitude']);
+                                                    if ($distance < 0.1) { // 100 meters
+                                                        $proximity_note = "Note: This submission is within 100 meters of a previous submission within the last 24 hours.";
+                                                        break;
+                                                    }
+                                                }
                                             }
+                                        } else {
+                                            // Flag submission for review if EXIF GPS data is missing
+                                            $is_flagged = 1;
+                                            $proximity_note = "Note: Photo lacks EXIF GPS data. Flagged for manual review.";
+                                            error_log("Photo for user $user_id lacks EXIF GPS data: $file_name");
+                                        }
+
+                                        // Check photo timestamp via EXIF
+                                        $photo_timestamp = null;
+                                        if ($exif && isset($exif['DateTimeOriginal'])) {
+                                            $photo_timestamp = date('Y-m-d H:i:s', strtotime($exif['DateTimeOriginal']));
+                                            $time_diff = abs(strtotime('now') - strtotime($photo_timestamp));
+                                            if ($time_diff > 28800) { // 8 hours
+                                                $submission_error = 'Photo appears to be older than 8 hours. Please upload a recent photo.';
+                                            } elseif ($time_diff > 25200) { // 7 hours
+                                                $proximity_note .= " Note: Photo is over 7 hours old. Flagged for review.";
+                                                $is_flagged = 1;
+                                            }
+                                        } else {
+                                            $proximity_note .= " Note: Photo lacks EXIF timestamp. Flagged for review.";
+                                            $is_flagged = 1;
                                         }
 
                                         if (!$submission_error) {
-                                            // Get IP address and device info
-                                            $ip_address = $_SERVER['REMOTE_ADDR'];
-                                            $device_info = $_SERVER['HTTP_USER_AGENT'];
+                                            // Get IP address and device info with fallbacks
+                                            $ip_address = $_SERVER['REMOTE_ADDR'] ?: 'unknown';
+                                            $device_info = $_SERVER['HTTP_USER_AGENT'] ?: 'unknown';
 
                                             // Begin transaction
                                             $pdo->beginTransaction();
@@ -254,7 +253,7 @@ try {
                                                         planting_site_id, status, submitted_at, flagged
                                                     ) VALUES (
                                                         :user_id, :barangay_id, :trees_planted, :photo_data, NOW(),
-                                                        :photo_hash, :latitude, :longitude, :location_accuracy,
+                                                        :photo_hash, :latitude, :longitude, NULL,
                                                         NOW(), :ip_address, :device_info, :submission_notes,
                                                         :planting_site_id, 'pending', NOW(), :flagged
                                                     )
@@ -267,12 +266,11 @@ try {
                                                     'photo_hash' => $photo_hash,
                                                     'latitude' => $latitude,
                                                     'longitude' => $longitude,
-                                                    'location_accuracy' => $location_accuracy,
                                                     'ip_address' => $ip_address,
                                                     'device_info' => $device_info,
                                                     'submission_notes' => $submission_notes ?: null,
                                                     'planting_site_id' => $planting_site['planting_site_id'],
-                                                    'flagged' => $proximity_note ? 1 : 0
+                                                    'flagged' => $is_flagged
                                                 ]);
 
                                                 // Update user's trees_planted and co2_offset (pending approval)
@@ -292,7 +290,7 @@ try {
                                                 ]);
 
                                                 // Log the activity with detailed info
-                                                $description = "Submitted $trees_planted trees in $barangay_name.";
+                                                $description = "Submitted $trees_planted trees in $barangay_name. $proximity_note";
                                                 $stmt = $pdo->prepare("
                                                     INSERT INTO activities (
                                                         user_id, description, activity_type, trees_planted, location, status, created_at
@@ -312,8 +310,16 @@ try {
                                                 $submission_success = 'Tree planting submitted successfully! It is now pending validation.';
                                             } catch (Exception $e) {
                                                 $pdo->rollBack();
-                                                $submission_error = 'Failed to submit tree planting. Please try again or save locally if you are offline.';
-                                                error_log("Submission error for user $user_id: " . $e->getMessage() . " | File: $file_name | Size: " . $_FILES['photo']['size']);
+                                                // More specific error message based on the exception
+                                                $error_message = $e->getMessage();
+                                                if (stripos($error_message, 'max_allowed_packet') !== false) {
+                                                    $submission_error = 'Photo size is too large for the server to handle. Please upload a smaller image (under 10MB).';
+                                                } elseif (stripos($error_message, 'photo_data') !== false) {
+                                                    $submission_error = 'Invalid photo data. Please try a different image.';
+                                                } else {
+                                                    $submission_error = 'Failed to submit tree planting. Please try again or save locally if you are offline.';
+                                                }
+                                                error_log("Submission error for user $user_id: " . $error_message . " | File: $file_name | Size: $file_size bytes");
                                             }
                                         }
                                     }
@@ -1103,7 +1109,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
                             <li>Ensure your photo clearly shows the planted trees.</li>
                             <li>Take the photo at the planting location with location services enabled.</li>
                             <li>Use a recent photo (taken within the last 8 hours).</li>
-                            <li>Make sure you upload clear image.</li>
+                            <li>Make sure you upload clear image (under 10MB).</li>
                         </ul>
                     </div>
                 </div>
@@ -1116,9 +1122,6 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
                 <form id="plantingForm" method="POST" action="" enctype="multipart/form-data">
                     <input type="hidden" name="submit_planting" value="1">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
-                    <input type="hidden" name="latitude" id="latitude">
-                    <input type="hidden" name="longitude" id="longitude">
-                    <input type="hidden" name="location_accuracy" id="location_accuracy">
                     <div class="form-group">
                         <label for="trees_planted">Number of Trees Planted</label>
                         <input type="number" id="trees_planted" name="trees_planted" min="1" max="100" required>
@@ -1270,30 +1273,6 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
             setTimeout(() => uploadArea.classList.remove('active'), 300);
         }
 
-        // Capture GPS coordinates
-        window.addEventListener('load', function() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        document.querySelector('#latitude').value = position.coords.latitude;
-                        document.querySelector('#longitude').value = position.coords.longitude;
-                        document.querySelector('#location_accuracy').value = position.coords.accuracy || '';
-                    },
-                    function(error) {
-                        console.error('Geolocation error:', error);
-                        alert('Unable to capture GPS coordinates. Please enable location services and try again.');
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    }
-                );
-            } else {
-                alert('Geolocation is not supported by your browser. Please use a modern browser to submit tree plantings.');
-            }
-        });
-
         // Basic offline support
         const form = document.querySelector('#plantingForm');
         const submitBtn = document.querySelector('#submitBtn');
@@ -1308,9 +1287,6 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
                     const data = JSON.parse(savedSubmission);
                     document.querySelector('#trees_planted').value = data.trees_planted;
                     document.querySelector('#submission_notes').value = data.submission_notes;
-                    document.querySelector('#latitude').value = data.latitude;
-                    document.querySelector('#longitude').value = data.longitude;
-                    document.querySelector('#location_accuracy').value = data.location_accuracy;
                     alert('Please re-upload the photo to submit.');
                 }
             }
@@ -1324,10 +1300,7 @@ function haversine_distance($lat1, $lon1, $lat2, $lon2) {
         saveLocalBtn.addEventListener('click', function() {
             const formData = {
                 trees_planted: document.querySelector('#trees_planted').value,
-                submission_notes: document.querySelector('#submission_notes').value,
-                latitude: document.querySelector('#latitude').value,
-                longitude: document.querySelector('#longitude').value,
-                location_accuracy: document.querySelector('#location_accuracy').value
+                submission_notes: document.querySelector('#submission_notes').value
             };
             localStorage.setItem('pendingSubmission', JSON.stringify(formData));
             alert('Submission saved locally. Please submit when you are back online.');

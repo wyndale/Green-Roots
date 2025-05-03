@@ -20,15 +20,24 @@ $offset = ($page - 1) * $events_per_page;
 
 // Filters
 $filter_date = isset($_GET['filter_date']) ? $_GET['filter_date'] : '';
-$filter_barangay = isset($_GET['filter_barangay']) ? (int)$_GET['filter_barangay'] : 0;
+$filter_province = isset($_GET['filter_province']) ? $_GET['filter_province'] : ''; // Changed from filter_barangay to filter_province
 
 // Initialize variables
 $upcoming_events = [];
 $my_events = [];
 $upcoming_total = 0;
 $my_events_total = 0;
-$barangays = [];
+$provinces = []; // Changed to provinces for filter
 $join_message = '';
+$join_message_type = '';
+
+// Check for session messages
+if (isset($_SESSION['join_message'])) {
+    $join_message = $_SESSION['join_message'];
+    $join_message_type = $_SESSION['join_message_type'] ?? 'error';
+    unset($_SESSION['join_message']);
+    unset($_SESSION['join_message_type']);
+}
 
 // Function to generate QR code data
 function generateQRCodeData($user_id, $event_id)
@@ -39,9 +48,10 @@ function generateQRCodeData($user_id, $event_id)
 // Fetch user data including barangay and profile picture
 try {
     $stmt = $pdo->prepare("
-        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.role, u.barangay_id, u.first_name, b.name as barangay_name 
+        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.role, u.barangay_id, u.first_name,
+               b.name as barangay_name, b.province as province_name, b.region as region_name
         FROM users u 
-        LEFT JOIN barangays b ON u.barangay_id = b.barangay_id 
+        LEFT JOIN barangays b ON u.barangay_id = b.barangay_id
         WHERE u.user_id = :user_id
     ");
     $stmt->execute(['user_id' => $user_id]);
@@ -89,10 +99,10 @@ try {
     $logo_data = $stmt->fetchColumn();
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
-    // Fetch barangays for filter
-    $stmt = $pdo->prepare("SELECT barangay_id, name FROM barangays ORDER BY name");
-    $stmt->execute();
-    $barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Fetch provinces for filter (only provinces within Region X for all users)
+    $stmt = $pdo->prepare("SELECT DISTINCT province FROM barangays WHERE region = :region AND province IS NOT NULL ORDER BY province");
+    $stmt->execute(['region' => $user['region_name']]);
+    $provinces = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
     // Handle Join Event
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_event'])) {
@@ -108,7 +118,8 @@ try {
                 echo json_encode(['success' => false, 'message' => 'This event has reached its capacity.']);
                 exit;
             }
-            $join_message = 'This event has reached its capacity.';
+            $_SESSION['join_message'] = 'This event has reached its capacity.';
+            $_SESSION['join_message_type'] = 'error';
         } else {
             // Check if the user has already joined the event
             $stmt = $pdo->prepare("
@@ -124,7 +135,8 @@ try {
                     echo json_encode(['success' => false, 'message' => 'You have already joined this event.']);
                     exit;
                 }
-                $join_message = 'You have already joined this event.';
+                $_SESSION['join_message'] = 'You have already joined this event.';
+                $_SESSION['join_message_type'] = 'error';
             } else {
                 // Fetch event details for logging
                 $stmt = $pdo->prepare("
@@ -166,20 +178,19 @@ try {
                         'location' => $event['location']
                     ]);
 
-                    // Fetch event details for the modal
-                    $stmt = $pdo->prepare("
-                        SELECT e.title, e.event_date, e.location, e.capacity, 
-                               (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
-                               b.name as barangay_name 
-                        FROM events e 
-                        LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
-                        WHERE e.event_id = :event_id
-                    ");
-                    $stmt->execute(['event_id' => $event_id]);
-                    $event = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                    // Prepare response for AJAX
+                    // For AJAX requests, return event details for the modal
                     if (isset($_POST['ajax'])) {
+                        $stmt = $pdo->prepare("
+                            SELECT e.title, e.event_date, e.location, e.capacity, 
+                                   (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
+                                   b.name as barangay_name 
+                            FROM events e 
+                            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
+                            WHERE e.event_id = :event_id
+                        ");
+                        $stmt->execute(['event_id' => $event_id]);
+                        $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
                         echo json_encode([
                             'success' => true,
                             'user' => [
@@ -192,12 +203,23 @@ try {
                         exit;
                     }
 
-                    $join_message = 'Successfully joined the event! Check your QR code in My Events.';
+                    // For non-AJAX requests, set success message and redirect
+                    $_SESSION['join_message'] = 'Successfully joined the event! Check your QR code in My Events.';
+                    $_SESSION['join_message_type'] = 'success';
                 } else {
-                    $join_message = 'Event not found.';
+                    if (isset($_POST['ajax'])) {
+                        echo json_encode(['success' => false, 'message' => 'Event not found.']);
+                        exit;
+                    }
+                    $_SESSION['join_message'] = 'Event not found.';
+                    $_SESSION['join_message_type'] = 'error';
                 }
             }
         }
+
+        // Redirect for non-AJAX requests to prevent form resubmission
+        header('Location: events.php?tab=upcoming');
+        exit;
     }
 
     // Handle View QR Code Request
@@ -240,32 +262,28 @@ try {
         exit;
     }
 
-    // Fetch Upcoming Events with Pagination (filtered by user's barangay)
+    // Fetch Upcoming Events with Pagination (filtered by user's province)
     if ($active_tab === 'upcoming') {
         $query = "
             SELECT e.event_id, e.title, e.description, e.event_date, e.location, e.capacity,
                    (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
                    b.name as barangay_name 
             FROM events e 
-            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
+            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id
             WHERE e.event_date >= CURDATE()
         ";
         $params = [];
 
-        // Filter by user's barangay (unless admin)
-        if ($user['role'] !== 'admin') {
-            $query .= " AND e.barangay_id = :user_barangay_id";
-            $params['user_barangay_id'] = $user['barangay_id'];
+        // Filter by selected province within Region X
+        if ($filter_province) {
+            $query .= " AND b.province = :province";
+            $params['province'] = $filter_province;
         }
 
-        // Apply filters
+        // Apply date filter
         if ($filter_date) {
             $query .= " AND e.event_date = :filter_date";
             $params['filter_date'] = $filter_date;
-        }
-        if ($filter_barangay && $user['role'] === 'admin') {
-            $query .= " AND e.barangay_id = :filter_barangay";
-            $params['filter_barangay'] = $filter_barangay;
         }
 
         // Count total for pagination
@@ -317,10 +335,6 @@ try {
         if ($filter_date) {
             $query .= " AND e.event_date = :filter_date";
             $params['filter_date'] = $filter_date;
-        }
-        if ($filter_barangay) {
-            $query .= " AND e.barangay_id = :filter_barangay";
-            $params['filter_barangay'] = $filter_barangay;
         }
 
         // Count total for pagination
@@ -1241,11 +1255,6 @@ try {
                 font-size: 12px;
             }
 
-            .header .profile img {
-                width: 35px;
-                height: 35px;
-            }
-
             .events-section {
                 padding: 15px;
                 height: 450px;
@@ -1330,7 +1339,7 @@ try {
                 <div class="error-message"><?php echo htmlspecialchars($error_message); ?></div>
             <?php endif; ?>
             <?php if ($join_message): ?>
-                <div class="<?php echo strpos($join_message, 'Success') !== false ? 'join-message' : 'join-error'; ?>">
+                <div class="<?php echo $join_message_type === 'success' ? 'join-message' : 'join-error'; ?>">
                     <?php echo htmlspecialchars($join_message); ?>
                 </div>
             <?php endif; ?>
@@ -1366,23 +1375,21 @@ try {
                             <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date:</label>
                             <input type="date" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
                         </div>
-                        <?php if ($user['role'] === 'admin'): ?>
-                            <div>
-                                <label for="filter_barangay"><i class="fas fa-map"></i> Barangay:</label>
-                                <select id="filter_barangay" name="filter_barangay">
-                                    <option value="">All Barangays</option>
-                                    <?php foreach ($barangays as $barangay): ?>
-                                        <option value="<?php echo $barangay['barangay_id']; ?>" <?php echo $filter_barangay == $barangay['barangay_id'] ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($barangay['name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        <?php endif; ?>
+                        <div>
+                            <label for="filter_province"><i class="fas fa-map"></i> Province:</label>
+                            <select id="filter_province" name="filter_province">
+                                <option value="">All Events in Region X</option>
+                                <?php foreach ($provinces as $province): ?>
+                                    <option value="<?php echo htmlspecialchars($province); ?>" <?php echo $filter_province === $province ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($province); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                     </div>
                     <div class="events-list">
                         <?php if (empty($upcoming_events)): ?>
-                            <p class="no-data">No upcoming events available in your barangay (<?php echo htmlspecialchars($user['barangay_name'] ?? 'N/A'); ?>).</p>
+                            <p class="no-data">No upcoming events available in your region (<?php echo htmlspecialchars($user['region_name'] ?? 'N/A'); ?>).</p>
                         <?php else: ?>
                             <?php foreach ($upcoming_events as $event): ?>
                                 <?php
@@ -1441,17 +1448,6 @@ try {
                         <div>
                             <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date:</label>
                             <input type="date" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
-                        </div>
-                        <div>
-                            <label for="filter_barangay"><i class="fas fa-map"></i> Barangay:</label>
-                            <select id="filter_barangay" name="filter_barangay">
-                                <option value="">All Barangays</option>
-                                <?php foreach ($barangays as $barangay): ?>
-                                    <option value="<?php echo $barangay['barangay_id']; ?>" <?php echo $filter_barangay == $barangay['barangay_id'] ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($barangay['name']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
                         </div>
                     </div>
                     <div class="events-list">
@@ -1523,7 +1519,7 @@ try {
                     $query_params = http_build_query([
                         'tab' => $active_tab,
                         'filter_date' => $filter_date,
-                        'filter_barangay' => $filter_barangay
+                        'filter_province' => $filter_province
                     ]);
                     ?>
                     <a href="?<?php echo $query_params; ?>&page=1" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>">First</a>
@@ -1655,21 +1651,21 @@ try {
 
         // Filter functionality
         const filterDate = document.querySelector('#filter_date');
-        const filterBarangay = document.querySelector('#filter_barangay');
+        const filterProvince = document.querySelector('#filter_province');
 
         function applyFilters() {
             const params = new URLSearchParams(window.location.search);
             params.set('filter_date', filterDate.value);
-            if (filterBarangay) {
-                params.set('filter_barangay', filterBarangay.value);
+            if (filterProvince) {
+                params.set('filter_province', filterProvince.value);
             }
             params.set('page', '1');
             window.location.search = params.toString();
         }
 
         filterDate.addEventListener('change', applyFilters);
-        if (filterBarangay) {
-            filterBarangay.addEventListener('change', applyFilters);
+        if (filterProvince) {
+            filterProvince.addEventListener('change', applyFilters);
         }
 
         // Modal functionality
@@ -1923,7 +1919,7 @@ try {
                     if (!qrCanvas) throw new Error('QR code canvas not found in modal');
 
                     const qrImage = qrCanvas.toDataURL('image/png');
-                    if (qrImage === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJIAAACWCAYAAABs0x1ZAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABeSURBVHhe7cEBDQAAAMKg909tDjtwABS7sYMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB7B8HbgD4qS5cAAAAASUVORK5CYII=') {
+                    if (qrImage === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJIAAACWCAYAAABs0x1ZAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABeSURBVHhe7cEBDQAAAMKg909tDjtwABS7sYMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB7B8HbgD4qS5cAAAAASUVORK5CYII=') {
                         throw new Error('QR code canvas is empty');
                     }
 
@@ -1974,5 +1970,4 @@ try {
         });
     </script>
 </body>
-
 </html>

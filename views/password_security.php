@@ -12,6 +12,21 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
+// Initialize variables
+$password_error = '';
+$password_success = '';
+$field_errors = [];
+
+// Check for session messages
+if (isset($_SESSION['password_success'])) {
+    $password_success = $_SESSION['password_success'];
+    unset($_SESSION['password_success']);
+}
+if (isset($_SESSION['field_errors'])) {
+    $field_errors = $_SESSION['field_errors'];
+    unset($_SESSION['field_errors']);
+}
+
 // Fetch user data
 try {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
@@ -54,9 +69,6 @@ try {
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
     // Handle Password Change
-    $password_error = '';
-    $password_success = '';
-    $field_errors = [];
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         $current_password = $_POST['current_password'];
         $new_password = $_POST['new_password'];
@@ -98,9 +110,17 @@ try {
                     'password' => $hashed_password,
                     'user_id' => $user_id
                 ]);
-                $password_success = 'Password updated successfully!';
+                $_SESSION['password_success'] = 'Password updated successfully!';
+            } else {
+                $_SESSION['field_errors'] = $field_errors;
             }
+        } else {
+            $_SESSION['field_errors'] = $field_errors;
         }
+
+        // Redirect to prevent form resubmission
+        header('Location: password_security.php');
+        exit;
     }
 
 } catch (PDOException $e) {
@@ -859,9 +879,7 @@ try {
             </div>
             <div class="account-section">
                 <h2><i class="fas fa-lock"></i> Password & Security</h2>
-                <?php if ($password_error): ?>
-                    <div class="error"><?php echo htmlspecialchars($password_error); ?></div>
-                <?php elseif ($password_success): ?>
+                <?php if ($password_success): ?>
                     <div class="success"><?php echo htmlspecialchars($password_success); ?></div>
                 <?php endif; ?>
                 <form method="POST" action="">

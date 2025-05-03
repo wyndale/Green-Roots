@@ -5,6 +5,12 @@
     // Initialize error message
     $error = '';
 
+    // Check for session-stored error message
+    if (isset($_SESSION['login_error'])) {
+        $error = $_SESSION['login_error'];
+        unset($_SESSION['login_error']);
+    }
+
     // Brute-force protection: Track failed attempts
     if (!isset($_SESSION['login_attempts'])) {
         $_SESSION['login_attempts'] = 0;
@@ -19,11 +25,11 @@
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Validate CSRF token
         if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-            $error = 'Invalid CSRF token.';
+            $_SESSION['login_error'] = 'Invalid CSRF token.';
         } else {
             // Check for too many failed attempts
             if ($_SESSION['login_attempts'] >= 5 && (time() - $_SESSION['last_attempt_time']) < 300) {
-                $error = 'Too many failed attempts. Please try again in 5 minutes.';
+                $_SESSION['login_error'] = 'Too many failed attempts. Please try again in 5 minutes.';
             } else {
                 // Reset attempts if enough time has passed
                 if ((time() - $_SESSION['last_attempt_time']) >= 300) {
@@ -35,7 +41,7 @@
                 $password = $_POST['password'];
 
                 if (empty($username) || empty($password)) {
-                    $error = 'Please fill in all fields.';
+                    $_SESSION['login_error'] = 'Please fill in all fields.';
                 } else {
                     try {
                         // Fetch user from database
@@ -67,14 +73,18 @@
                             // Increment failed attempts
                             $_SESSION['login_attempts']++;
                             $_SESSION['last_attempt_time'] = time();
-                            $error = 'Invalid username or password.';
+                            $_SESSION['login_error'] = 'Invalid username or password.';
                         }
                     } catch (PDOException $e) {
-                        $error = 'An error occurred. Please try again later.';
+                        $_SESSION['login_error'] = 'An error occurred. Please try again later.';
                     }
                 }
             }
         }
+
+        // Redirect to prevent form resubmission
+        header('Location: login.php');
+        exit;
     }
 ?>
 
@@ -365,13 +375,13 @@
         }
 
         .login-container .third-party-login a.google:hover {
-            background:rgb(56, 152, 59);
+            background: rgb(56, 152, 59);
             transform: scale(1.1);
             box-shadow: 0 4px 10px rgba(219, 68, 55, 0.3);
         }
 
         .login-container .third-party-login a.facebook {
-            background:rgb(9, 95, 12);
+            background: rgb(9, 95, 12);
             color: #fff;
         }
 

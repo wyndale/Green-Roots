@@ -6,6 +6,16 @@
     $error = '';
     $success = '';
 
+    // Check for session-stored messages
+    if (isset($_SESSION['register_error'])) {
+        $error = $_SESSION['register_error'];
+        unset($_SESSION['register_error']);
+    }
+    if (isset($_SESSION['register_success'])) {
+        $success = $_SESSION['register_success'];
+        unset($_SESSION['register_success']);
+    }
+
     // Generate CSRF token if not set
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -14,7 +24,7 @@
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Validate CSRF token
         if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-            $error = 'Invalid CSRF token.';
+            $_SESSION['register_error'] = 'Invalid CSRF token.';
         } else {
             // Sanitize and validate inputs
             $first_name = filter_input(INPUT_POST, 'first_name', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
@@ -27,38 +37,38 @@
 
             // Basic validation
             if (empty($first_name) || empty($last_name) || empty($username) || empty($email) || empty($password) || empty($confirm_password) || empty($barangay_id)) {
-                $error = 'Please fill in all fields.';
+                $_SESSION['register_error'] = 'Please fill in all fields.';
             } elseif (strlen($first_name) < 2) {
-                $error = 'First name must be at least 2 characters long.';
+                $_SESSION['register_error'] = 'First name must be at least 2 characters long.';
             } elseif (strlen($last_name) < 2) {
-                $error = 'Last name must be at least 2 characters long.';
+                $_SESSION['register_error'] = 'Last name must be at least 2 characters long.';
             } elseif (strlen($username) < 3) {
-                $error = 'Username must be at least 3 characters long.';
+                $_SESSION['register_error'] = 'Username must be at least 3 characters long.';
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $error = 'Invalid email format.';
+                $_SESSION['register_error'] = 'Invalid email format.';
             } elseif (strlen($password) < 8) {
-                $error = 'Password must be at least 8 characters long.';
+                $_SESSION['register_error'] = 'Password must be at least 8 characters long.';
             } elseif (!preg_match('/[A-Z]/', $password)) {
-                $error = 'Password must contain at least one capital letter.';
+                $_SESSION['register_error'] = 'Password must contain at least one capital letter.';
             } elseif (!preg_match('/[0-9]/', $password)) {
-                $error = 'Password must contain at least one number.';
+                $_SESSION['register_error'] = 'Password must contain at least one number.';
             } elseif (!preg_match('/[!@#$%^&*(),.?":{}|<>]/', $password)) {
-                $error = 'Password must contain at least one special character.';
+                $_SESSION['register_error'] = 'Password must contain at least one special character.';
             } elseif ($password !== $confirm_password) {
-                $error = 'Passwords do not match.';
+                $_SESSION['register_error'] = 'Passwords do not match.';
             } else {
                 try {
                     // Check if username already exists
                     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = :username");
                     $stmt->execute(['username' => $username]);
                     if ($stmt->fetchColumn() > 0) {
-                        $error = 'Username already exists.';
+                        $_SESSION['register_error'] = 'Username already exists.';
                     } else {
                         // Check if email already exists
                         $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = :email");
                         $stmt->execute(['email' => $email]);
                         if ($stmt->fetchColumn() > 0) {
-                            $error = 'Email already exists.';
+                            $_SESSION['register_error'] = 'Email already exists.';
                         } else {
                             // Hash the password
                             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
@@ -97,14 +107,18 @@
                                 error_log("Default profile picture not found in assets table during registration for user_id: $user_id");
                             }
 
-                            $success = 'Registration successful! You can now <a href="login.php">login</a>.';
+                            $_SESSION['register_success'] = 'Registration successful! You can now <a href="login.php">login</a>.';
                         }
                     }
                 } catch (PDOException $e) {
-                    $error = 'An error occurred. Please try again later.';
+                    $_SESSION['register_error'] = 'An error occurred. Please try again later.';
                 }
             }
         }
+
+        // Redirect to prevent form resubmission
+        header('Location: register.php');
+        exit;
     }
 ?>
 
@@ -368,8 +382,7 @@
         }
 
         .register-container .links a:hover {
-            color: #388E3C;
-        }
+            color: #388E3C    }
 
         .register-container .success a {
             color: #030a03;
