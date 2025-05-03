@@ -31,14 +31,15 @@ $barangays = [];
 $join_message = '';
 
 // Function to generate QR code data
-function generateQRCodeData($user_id, $event_id) {
+function generateQRCodeData($user_id, $event_id)
+{
     return hash('sha256', $user_id . $event_id . time());
 }
 
 // Fetch user data including barangay and profile picture
 try {
     $stmt = $pdo->prepare("
-        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.role, u.barangay_id, b.name as barangay_name 
+        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.role, u.barangay_id, u.first_name, b.name as barangay_name 
         FROM users u 
         LEFT JOIN barangays b ON u.barangay_id = b.barangay_id 
         WHERE u.user_id = :user_id
@@ -59,7 +60,7 @@ try {
         $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
         $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
         $asset = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         if ($asset && $asset['asset_data']) {
             $mime_type = 'image/jpeg'; // Default
             if ($asset['asset_type'] === 'default_profile') {
@@ -77,7 +78,12 @@ try {
         $profile_picture_data = 'default_profile.jpg';
     }
 
-    // Fetch logo
+    // Fetch favicon and logo
+    $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'favicon' LIMIT 1");
+    $stmt->execute();
+    $favicon_data = $stmt->fetchColumn();
+    $favicon_base64 = $favicon_data ? 'data:image/png;base64,' . base64_encode($favicon_data) : '../assets/favicon.png';
+
     $stmt = $pdo->prepare("SELECT asset_data FROM assets WHERE asset_type = 'logo' LIMIT 1");
     $stmt->execute();
     $logo_data = $stmt->fetchColumn();
@@ -92,7 +98,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_event'])) {
         $event_id = (int)$_POST['event_id'];
 
-        // Check if the event has available spots (future enhancement)
+        // Check if the event has available spots
         $stmt = $pdo->prepare("SELECT capacity, (SELECT COUNT(*) FROM event_participants WHERE event_id = :event_id) as participant_count FROM events WHERE event_id = :event_id");
         $stmt->execute(['event_id' => $event_id]);
         $event_capacity = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -334,7 +340,6 @@ try {
         $stmt->execute();
         $my_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
 }
@@ -342,14 +347,15 @@ try {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Events - Green Roots</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js" onload="qrCodeLoaded = true; console.log('QRCode library loaded from UNPKG');" onerror="loadLocalQRCode()"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jsPDF.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jsPDF.umd.min.js" defer></script>
     <style>
         * {
             margin: 0;
@@ -383,6 +389,7 @@ try {
             position: fixed;
             top: 0;
             bottom: 0;
+            overflow-y: auto;
         }
 
         .sidebar img.logo {
@@ -395,10 +402,26 @@ try {
             color: #666;
             text-decoration: none;
             font-size: 24px;
-            transition: color 0.3s;
+            transition: transform 0.3s, color 0.3s;
         }
 
-        .sidebar a:hover,
+        .sidebar a:hover {
+            color: #4CAF50;
+            animation: bounce 0.3s ease-out;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-5px);
+            }
+        }
+
         .sidebar a.active {
             color: #4CAF50;
         }
@@ -406,17 +429,17 @@ try {
         .main-content {
             flex: 1;
             padding: 40px;
+            margin-left: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-left: 80px;
         }
 
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 40px;
             width: 100%;
             position: relative;
         }
@@ -426,7 +449,25 @@ try {
             color: #4CAF50;
         }
 
-        .header .search-bar {
+        .header .notification-search {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .notification-search .notification {
+            font-size: 24px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .header .notification-search .notification:hover {
+            color: #4CAF50;
+            transform: scale(1.1);
+        }
+
+        .header .notification-search .search-bar {
             display: flex;
             align-items: center;
             background: #fff;
@@ -437,15 +478,21 @@ try {
             width: 300px;
         }
 
-        .header .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 100%;
+        .header .notification-search .search-bar i {
+            margin-right: 10px;
+            color: #666;
             font-size: 16px;
         }
 
-        .header .search-bar .search-results {
+        .header .notification-search .search-bar input {
+            border: none;
+            outline: none;
+            padding: 5px;
+            width: 90%;
+            font-size: 16px;
+        }
+
+        .header .notification-search .search-bar .search-results {
             position: absolute;
             top: 50px;
             left: 0;
@@ -457,11 +504,11 @@ try {
             z-index: 10;
         }
 
-        .header .search-bar .search-results.active {
+        .header .notification-search .search-bar .search-results.active {
             display: block;
         }
 
-        .header .search-bar .search-results a {
+        .header .notification-search .search-bar .search-results a {
             display: block;
             padding: 12px;
             color: #333;
@@ -470,8 +517,8 @@ try {
             font-size: 16px;
         }
 
-        .header .search-bar .search-results a:hover {
-            background: #E8F5E9;
+        .header .notification-search .search-bar .search-results a:hover {
+            background: #e0e7ff;
         }
 
         .header .profile {
@@ -528,19 +575,32 @@ try {
         }
 
         .profile-dropdown a:hover {
-            background: #E8F5E9;
+            background: #e0e7ff;
         }
 
         .events-nav {
             width: 100%;
             max-width: 800px;
-            background: #BBEBBF;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
             padding: 15px 0;
             display: flex;
             justify-content: space-around;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .events-nav a {
@@ -560,25 +620,26 @@ try {
 
         .events-nav a:hover {
             color: #4CAF50;
-            background:rgb(156, 214, 161);
+            background: #BBEBBF;
         }
 
         .events-section {
-            background: #E8F5E9;
+            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
             padding: 30px;
             border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
             width: 100%;
             max-width: 800px;
             margin-bottom: 30px;
             height: 650px;
             display: flex;
             flex-direction: column;
+            animation: fadeIn 0.5s ease-in;
         }
 
         .events-section h2 {
             font-size: 28px;
-            color: #4CAF50;
+            color: #2E7D32;
             margin-bottom: 25px;
         }
 
@@ -591,6 +652,13 @@ try {
         .filter-bar label {
             font-size: 16px;
             color: #666;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .filter-bar label i {
+            color: #4CAF50;
         }
 
         .filter-bar input[type="date"],
@@ -599,6 +667,19 @@ try {
             border: 1px solid #e0e7ff;
             border-radius: 5px;
             font-size: 14px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .filter-bar input[type="date"]:hover,
+        .filter-bar select:hover {
+            border-color: #4CAF50;
+        }
+
+        .filter-bar input[type="date"]:focus,
+        .filter-bar select:focus {
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+            outline: none;
         }
 
         .events-list {
@@ -637,6 +718,11 @@ try {
             flex-direction: column;
             gap: 15px;
             border-left: 5px solid #4CAF50;
+            transition: transform 0.2s;
+        }
+
+        .event-card:hover {
+            transform: scale(1.01);
         }
 
         .event-card-header {
@@ -702,12 +788,14 @@ try {
             padding: 10px 20px;
             border-radius: 5px;
             font-size: 14px;
+            font-weight: bold;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
         }
 
         .event-card .join-btn:hover {
             background: #388E3C;
+            transform: scale(1.02);
         }
 
         .event-card .join-btn.disabled {
@@ -778,11 +866,12 @@ try {
             text-decoration: none;
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
         }
 
         .pagination a:hover {
             background: #E8F5E9;
+            transform: scale(1.02);
         }
 
         .pagination a.disabled {
@@ -874,13 +963,14 @@ try {
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.1s;
             display: block;
             margin: 0 auto;
         }
 
         .modal-content .download-btn:hover {
             background: #388E3C;
+            transform: scale(1.02);
         }
 
         .modal-content .close-btn {
@@ -919,7 +1009,9 @@ try {
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Mobile Responsive Design */
@@ -938,6 +1030,7 @@ try {
                 border-radius: 15px 15px 0 0;
                 box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
                 padding: 10px 0;
+                z-index: 100;
             }
 
             .sidebar img.logo {
@@ -956,31 +1049,52 @@ try {
             }
 
             .header {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-direction: row;
+                align-items: center;
                 gap: 15px;
+                width: 100%;
             }
 
             .header h1 {
-                font-size: 28px;
+                font-size: 24px;
             }
 
-            .header .search-bar {
+            .header .notification-search {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                width: auto;
+                flex-grow: 1;
+            }
+
+            .header .notification-search .notification {
+                font-size: 20px;
+                flex-shrink: 0;
+            }
+
+            .header .notification-search .search-bar {
                 width: 100%;
+                max-width: 200px;
                 padding: 5px 10px;
+                flex-grow: 1;
             }
 
-            .header .search-bar input {
-                width: 100%;
+            .header .notification-search .search-bar i {
+                font-size: 14px;
+                margin-right: 5px;
+            }
+
+            .header .notification-search .search-bar input {
                 font-size: 14px;
             }
 
-            .header .search-bar .search-results {
+            .header .notification-search .search-bar .search-results {
                 top: 40px;
             }
 
             .header .profile {
                 margin-top: 0;
+                flex-shrink: 0;
             }
 
             .header .profile img {
@@ -990,6 +1104,8 @@ try {
 
             .header .profile span {
                 font-size: 16px;
+                display: none;
+                /* Hide the name to save space */
             }
 
             .profile-dropdown {
@@ -1097,20 +1213,117 @@ try {
                 padding: 8px 15px;
             }
         }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header .notification-search {
+                gap: 5px;
+            }
+
+            .header .notification-search .notification {
+                font-size: 18px;
+            }
+
+            .header .notification-search .search-bar {
+                max-width: 150px;
+                padding: 4px 8px;
+            }
+
+            .header .notification-search .search-bar i {
+                font-size: 12px;
+                margin-right: 4px;
+            }
+
+            .header .notification-search .search-bar input {
+                font-size: 12px;
+            }
+
+            .header .profile img {
+                width: 35px;
+                height: 35px;
+            }
+
+            .events-section {
+                padding: 15px;
+                height: 450px;
+            }
+
+            .events-section h2 {
+                font-size: 20px;
+            }
+
+            .filter-bar label {
+                font-size: 14px;
+            }
+
+            .filter-bar input[type="date"],
+            .filter-bar select {
+                font-size: 12px;
+                padding: 6px;
+            }
+
+            .event-card {
+                padding: 10px;
+            }
+
+            .event-card-header h3 {
+                font-size: 14px;
+            }
+
+            .event-detail-item {
+                font-size: 12px;
+            }
+
+            .event-card .join-btn {
+                font-size: 10px;
+                padding: 6px;
+            }
+
+            .no-data {
+                font-size: 12px;
+            }
+
+            .join-message,
+            .join-error {
+                font-size: 12px;
+            }
+
+            .pagination a {
+                font-size: 12px;
+                padding: 4px 8px;
+            }
+
+            .modal-content h3 {
+                font-size: 18px;
+            }
+
+            .modal-detail-item {
+                font-size: 12px;
+            }
+
+            .modal-content .download-btn {
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="sidebar">
             <img src="<?php echo $logo_base64; ?>" alt="Green Roots Logo" class="logo">
             <a href="dashboard.php" title="Dashboard"><i class="fas fa-home"></i></a>
-            <a href="submit.php" title="Submit Planting"><i class="fas fa-tree"></i></a>
-            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-marker-alt"></i></a>
-            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-trophy"></i></a>
+            <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
+            <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
+            <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
             <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
-            <a href="events.php" title="Events" class="active"><i class="fas fa-calendar-alt"></i></a>
-            <a href="history.php" title="History"><i class="fas fa-history"></i></a>
-            <a href="feedback.php" title="Feedback"><i class="fas fa-comment-dots"></i></a>
+            <a href="events.php" title="Events" class="active"><i class="fas fa-calendar-days"></i></a>
+            <a href="history.php" title="History"><i class="fas fa-clock"></i></a>
+            <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
         </div>
         <div class="main-content">
             <?php if (isset($error_message)): ?>
@@ -1123,12 +1336,16 @@ try {
             <?php endif; ?>
             <div class="header">
                 <h1>Events</h1>
-                <div class="search-bar">
-                    <input type="text" placeholder="Search functionalities..." id="searchInput">
-                    <div class="search-results" id="searchResults"></div>
+                <div class="notification-search">
+                    <div class="notification"><i class="fas fa-bell"></i></div>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search" id="searchInput">
+                        <div class="search-results" id="searchResults"></div>
+                    </div>
                 </div>
                 <div class="profile" id="profileBtn">
-                    <span><?php echo htmlspecialchars($username); ?></span>
+                    <span><?php echo htmlspecialchars($user['first_name']); ?></span>
                     <img src="<?php echo $profile_picture_data; ?>" alt="Profile Picture">
                     <div class="profile-dropdown" id="profileDropdown">
                         <div class="email"><?php echo htmlspecialchars($user['email']); ?></div>
@@ -1146,12 +1363,12 @@ try {
                     <h2>Upcoming Events</h2>
                     <div class="filter-bar">
                         <div>
-                            <label for="filter_date">Date:</label>
+                            <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date:</label>
                             <input type="date" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
                         </div>
                         <?php if ($user['role'] === 'admin'): ?>
                             <div>
-                                <label for="filter_barangay">Barangay:</label>
+                                <label for="filter_barangay"><i class="fas fa-map"></i> Barangay:</label>
                                 <select id="filter_barangay" name="filter_barangay">
                                     <option value="">All Barangays</option>
                                     <?php foreach ($barangays as $barangay): ?>
@@ -1169,11 +1386,11 @@ try {
                         <?php else: ?>
                             <?php foreach ($upcoming_events as $event): ?>
                                 <?php
-                                    $event_date = new DateTime($event['event_date']);
-                                    $today = new DateTime();
-                                    $status = $event_date->format('Y-m-d') === $today->format('Y-m-d') ? 'ongoing' : ($event_date > $today ? 'upcoming' : 'past');
-                                    $has_joined = in_array($event['event_id'], $joined_events);
-                                    $spots_left = $event['capacity'] ? ($event['capacity'] - $event['participant_count']) : 'Unlimited';
+                                $event_date = new DateTime($event['event_date']);
+                                $today = new DateTime();
+                                $status = $event_date->format('Y-m-d') === $today->format('Y-m-d') ? 'ongoing' : ($event_date > $today ? 'upcoming' : 'past');
+                                $has_joined = in_array($event['event_id'], $joined_events);
+                                $spots_left = $event['capacity'] ? ($event['capacity'] - $event['participant_count']) : 'Unlimited';
                                 ?>
                                 <div class="event-card">
                                     <div class="event-card-header">
@@ -1222,11 +1439,11 @@ try {
                     <h2>My Events</h2>
                     <div class="filter-bar">
                         <div>
-                            <label for="filter_date">Date:</label>
+                            <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date:</label>
                             <input type="date" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
                         </div>
                         <div>
-                            <label for="filter_barangay">Barangay:</label>
+                            <label for="filter_barangay"><i class="fas fa-map"></i> Barangay:</label>
                             <select id="filter_barangay" name="filter_barangay">
                                 <option value="">All Barangays</option>
                                 <?php foreach ($barangays as $barangay): ?>
@@ -1243,10 +1460,10 @@ try {
                         <?php else: ?>
                             <?php foreach ($my_events as $event): ?>
                                 <?php
-                                    $event_date = new DateTime($event['event_date']);
-                                    $today = new DateTime();
-                                    $status = $event_date->format('Y-m-d') === $today->format('Y-m-d') ? 'ongoing' : ($event_date > $today ? 'upcoming' : 'past');
-                                    $spots_left = $event['capacity'] ? ($event['capacity'] - $event['participant_count']) : 'Unlimited';
+                                $event_date = new DateTime($event['event_date']);
+                                $today = new DateTime();
+                                $status = $event_date->format('Y-m-d') === $today->format('Y-m-d') ? 'ongoing' : ($event_date > $today ? 'upcoming' : 'past');
+                                $spots_left = $event['capacity'] ? ($event['capacity'] - $event['participant_count']) : 'Unlimited';
                                 ?>
                                 <div class="event-card">
                                     <div class="event-card-header">
@@ -1300,14 +1517,14 @@ try {
                 <?php endif; ?>
                 <div class="pagination">
                     <?php
-                        $total_pages = $active_tab === 'upcoming' ? $upcoming_pages : $my_events_pages;
-                        $prev_page = $page - 1;
-                        $next_page = $page + 1;
-                        $query_params = http_build_query([
-                            'tab' => $active_tab,
-                            'filter_date' => $filter_date,
-                            'filter_barangay' => $filter_barangay
-                        ]);
+                    $total_pages = $active_tab === 'upcoming' ? $upcoming_pages : $my_events_pages;
+                    $prev_page = $page - 1;
+                    $next_page = $page + 1;
+                    $query_params = http_build_query([
+                        'tab' => $active_tab,
+                        'filter_date' => $filter_date,
+                        'filter_barangay' => $filter_barangay
+                    ]);
                     ?>
                     <a href="?<?php echo $query_params; ?>&page=1" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>">First</a>
                     <a href="?<?php echo $query_params; ?>&page=<?php echo $prev_page; ?>" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>">Prev</a>
@@ -1350,36 +1567,45 @@ try {
         </div>
     </div>
 
+    <script src="../assets/js/jsPDF-3.0.1/dist/jspdf.umd.min.js"></script>
     <script>
-        // Flag to track if QRCode library loaded
-        let qrCodeLoaded = false;
-
-        // Fallback to local QRCode script
-        function loadLocalQRCode() {
-            console.warn('UNPKG failed to load QRCode library. Attempting to load local fallback...');
-            const script = document.createElement('script');
-            script.src = '../assets/qrcode.min.js'; // Ensure this file exists
-            script.onload = () => {
-                qrCodeLoaded = true;
-                console.log('Local QRCode library loaded successfully.');
-            };
-            script.onerror = () => {
-                qrCodeLoaded = false;
-                console.error('Failed to load local QRCode library. Please ensure ../assets/qrcode.min.js exists.');
-            };
-            document.head.appendChild(script);
-        }
-
         // Search bar functionality
-        const functionalities = [
-            { name: 'Dashboard', url: 'dashboard.php' },
-            { name: 'Submit Planting', url: 'submit.php' },
-            { name: 'Planting Site', url: 'planting_site.php' },
-            { name: 'Leaderboard', url: 'leaderboard.php' },
-            { name: 'Rewards', url: 'rewards.php' },
-            { name: 'Events', url: 'events.php' },
-            { name: 'History', url: 'history.php' },
-            { name: 'Feedback', url: 'feedback.php' }
+        const functionalities = [{
+                name: 'Dashboard',
+                url: 'dashboard.php'
+            },
+            {
+                name: 'Submit Planting',
+                url: 'submit.php'
+            },
+            {
+                name: 'Planting Site',
+                url: 'planting_site.php'
+            },
+            {
+                name: 'Leaderboard',
+                url: 'leaderboard.php'
+            },
+            {
+                name: 'Rewards',
+                url: 'rewards.php'
+            },
+            {
+                name: 'Events',
+                url: 'events.php'
+            },
+            {
+                name: 'History',
+                url: 'history.php'
+            },
+            {
+                name: 'Feedback',
+                url: 'feedback.php'
+            },
+            {
+                name: 'Logout',
+                url: 'logout.php'
+            }
         ];
 
         const searchInput = document.querySelector('#searchInput');
@@ -1391,7 +1617,7 @@ try {
             searchResults.classList.remove('active');
 
             if (query.length > 0) {
-                const matches = functionalities.filter(func => 
+                const matches = functionalities.filter(func =>
                     func.name.toLowerCase().startsWith(query)
                 );
 
@@ -1459,37 +1685,47 @@ try {
         const downloadBtn = document.querySelector('#downloadBtn');
         const loadingSpinner = document.querySelector('#loadingSpinner');
 
-        // Function to generate QR code with retry mechanism
-        function generateQRCode(element, data, retries = 5, delay = 2000) {
-            console.log(`Attempting to generate QR code. Retries left: ${retries}, QRCode library loaded: ${qrCodeLoaded}`);
-            if (retries <= 0 || !qrCodeLoaded) {
-                console.error('QRCode library failed to load after multiple attempts.');
-                element.innerHTML = '<p style="color: #dc2626;">Error: Unable to generate QR code. Please reload the page and try again.</p>';
-                return;
+        // Ensure QRCode library is loaded before generating QR codes
+        function waitForQRCode(callback) {
+            if (typeof QRCode !== 'undefined') {
+                callback();
+            } else {
+                const maxAttempts = 10;
+                let attempts = 0;
+                const interval = setInterval(() => {
+                    attempts++;
+                    if (typeof QRCode !== 'undefined') {
+                        clearInterval(interval);
+                        callback();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        console.error('QRCode library failed to load after maximum attempts.');
+                        modalQRCode.innerHTML = '<p style="color: #dc2626;">Error: Unable to generate QR code. Please try again later.</p>';
+                        loadingSpinner.classList.remove('active');
+                    }
+                }, 500);
             }
+        }
 
-            if (typeof QRCode === 'undefined') {
-                console.log(`QRCode library not loaded yet. Retrying in ${delay}ms... (${retries} attempts left)`);
-                setTimeout(() => generateQRCode(element, data, retries - 1, delay), delay);
-                return;
-            }
-
-            console.log('Generating QR code...');
-            element.innerHTML = '';
-            try {
-                new QRCode(element, {
-                    text: data,
-                    width: 150,
-                    height: 150,
-                    colorDark: "#000000",
-                    colorLight: "#ffffff",
-                    correctLevel: QRCode.CorrectLevel.H
-                });
-                console.log('QR code generated successfully.');
-            } catch (error) {
-                console.error('Failed to generate QR code:', error);
-                element.innerHTML = '<p style="color: #dc2626;">Error: Failed to generate QR code. Please try again.</p>';
-            }
+        // Generate QR code
+        function generateQRCode(element, data) {
+            waitForQRCode(() => {
+                element.innerHTML = '';
+                try {
+                    new QRCode(element, {
+                        text: data,
+                        width: 150,
+                        height: 150,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                    console.log('QR code generated successfully.');
+                } catch (error) {
+                    console.error('Failed to generate QR code:', error);
+                    element.innerHTML = '<p style="color: #dc2626;">Error: Failed to generate QR code. Please try again.</p>';
+                }
+            });
         }
 
         // Handle Join Event buttons
@@ -1503,50 +1739,51 @@ try {
 
                 // AJAX request to join event
                 fetch('', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `join_event=true&event_id=${eventId}&ajax=true`
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    loadingSpinner.classList.remove('active');
-                    if (data.success) {
-                        // Populate modal
-                        modalUsername.textContent = data.user.username;
-                        modalEmail.textContent = data.user.email;
-                        modalEventTitle.textContent = data.event.title;
-                        modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
-                            month: 'long',
-                            day: 'numeric',
-                            year: 'numeric'
-                        });
-                        modalEventLocation.textContent = data.event.location;
-                        modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
-                        
-                        // Generate QR code
-                        generateQRCode(modalQRCode, data.qr_code);
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `join_event=true&event_id=${eventId}&ajax=true`
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        loadingSpinner.classList.remove('active');
+                        if (data.success) {
+                            // Populate modal
+                            modalUsername.textContent = data.user.username;
+                            modalEmail.textContent = data.user.email;
+                            modalEventTitle.textContent = data.event.title;
+                            modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric'
+                            });
+                            modalEventLocation.textContent = data.event.location;
+                            modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
 
-                        // Show modal
-                        modal.style.display = 'flex';
+                            // Generate QR code
+                            generateQRCode(modalQRCode, data.qr_code);
 
-                        // Store data for PDF generation
-                        downloadBtn.onclick = () => generatePDF(data);
-                    } else {
-                        alert(data.message || 'Failed to join event.');
-                    }
-                })
-                .catch(error => {
-                    loadingSpinner.classList.remove('active');
-                    console.error('Error:', error);
-                    alert('An error occurred while joining the event: ' + error.message);
-                });
+                            // Show modal
+                            modal.style.display = 'flex';
+
+                            // Store data for PDF generation
+                            downloadBtn.onclick = () => generatePDF(data);
+                        } else {
+                            loadingSpinner.classList.remove('active');
+                            alert(data.message || 'Failed to join event.');
+                        }
+                    })
+                    .catch(error => {
+                        loadingSpinner.classList.remove('active');
+                        console.error('Error:', error);
+                        alert('An error occurred while joining the event: ' + error.message);
+                    });
             });
         });
 
@@ -1560,50 +1797,51 @@ try {
 
                 // AJAX request to view QR code
                 fetch('', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `view_qr_code=true&event_id=${eventId}`
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    loadingSpinner.classList.remove('active');
-                    if (data.success) {
-                        // Populate modal
-                        modalUsername.textContent = data.user.username;
-                        modalEmail.textContent = data.user.email;
-                        modalEventTitle.textContent = data.event.title;
-                        modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
-                            month: 'long',
-                            day: 'numeric',
-                            year: 'numeric'
-                        });
-                        modalEventLocation.textContent = data.event.location;
-                        modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
-                        
-                        // Generate QR code
-                        generateQRCode(modalQRCode, data.qr_code);
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `view_qr_code=true&event_id=${eventId}`
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        loadingSpinner.classList.remove('active');
+                        if (data.success) {
+                            // Populate modal
+                            modalUsername.textContent = data.user.username;
+                            modalEmail.textContent = data.user.email;
+                            modalEventTitle.textContent = data.event.title;
+                            modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric'
+                            });
+                            modalEventLocation.textContent = data.event.location;
+                            modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
 
-                        // Show modal
-                        modal.style.display = 'flex';
+                            // Generate QR code
+                            generateQRCode(modalQRCode, data.qr_code);
 
-                        // Store data for PDF generation
-                        downloadBtn.onclick = () => generatePDF(data);
-                    } else {
-                        alert(data.message || 'Failed to fetch ticket.');
-                    }
-                })
-                .catch(error => {
-                    loadingSpinner.classList.remove('active');
-                    console.error('Error:', error);
-                    alert('An error occurred while fetching the ticket: ' + error.message);
-                });
+                            // Show modal
+                            modal.style.display = 'flex';
+
+                            // Store data for PDF generation
+                            downloadBtn.onclick = () => generatePDF(data);
+                        } else {
+                            loadingSpinner.classList.remove('active');
+                            alert(data.message || 'Failed to fetch ticket.');
+                        }
+                    })
+                    .catch(error => {
+                        loadingSpinner.classList.remove('active');
+                        console.error('Error:', error);
+                        alert('An error occurred while fetching the ticket: ' + error.message);
+                    });
             });
         });
 
@@ -1618,89 +1856,108 @@ try {
             }
         });
 
-        // Generate PDF with retry mechanism for QRCode
+        // Generate PDF
         function generatePDF(data) {
-            if (typeof window.jspdf === 'undefined') {
-                alert('PDF library not loaded. Please try again.');
-                return;
-            }
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
+            loadingSpinner.classList.add('active');
 
-            // Set up the ticket design
-            doc.setFontSize(20);
-            doc.setTextColor(76, 175, 80); // #4CAF50
-            doc.text('Tree Planting Event Ticket', 105, 20, { align: 'center' });
+            try {
+                const {
+                    jsPDF
+                } = window.jspdf;
+                const doc = new jsPDF();
 
-            doc.setFontSize(12);
-            doc.setTextColor(51, 51, 51); // #333
-            doc.text('Green Roots Initiative', 105, 30, { align: 'center' });
+                // Fonts and colors
+                const primaryColor = [76, 175, 80]; // #4CAF50
+                const secondaryColor = [51, 51, 51]; // #333
+                const labelColor = [120, 120, 120]; // #777
 
-            // Event Details
-            doc.setFontSize(12);
-            doc.text(`User: ${data.user.username}`, 20, 50);
-            doc.text(`Email: ${data.user.email}`, 20, 60);
-            doc.text(`Event: ${data.event.title}`, 20, 70);
-            doc.text(`Date: ${new Date(data.event.event_date).toLocaleDateString('en-US', {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric'
-            })}`, 20, 80);
-            doc.text(`Location: ${data.event.location}`, 20, 90);
-            doc.text(`Barangay: ${data.event.barangay_name || 'N/A'}`, 20, 100);
+                // Header
+                doc.setFontSize(22);
+                doc.setTextColor(...primaryColor);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Tree Planting Event Ticket', 105, 25, {
+                    align: 'center'
+                });
 
-            // Generate QR code for PDF with retry mechanism
-            const canvas = document.createElement('canvas');
-            function generateQRCodeForPDF(retries = 5, delay = 2000) {
-                console.log(`Attempting to generate QR code for PDF. Retries left: ${retries}, QRCode library loaded: ${qrCodeLoaded}`);
-                if (retries <= 0 || !qrCodeLoaded) {
-                    doc.setTextColor(220, 38, 38); // #dc2626
-                    doc.text('Error: Unable to generate QR code.', 20, 120);
-                    doc.save(`Event_${data.event.title}_Ticket.pdf`);
-                    return;
-                }
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...secondaryColor);
+                doc.text('Presented by Green Roots Initiative', 105, 35, {
+                    align: 'center'
+                });
 
-                if (typeof QRCode === 'undefined') {
-                    console.log(`QRCode library not loaded for PDF generation. Retrying in ${delay}ms... (${retries} attempts left)`);
-                    setTimeout(() => generateQRCodeForPDF(retries - 1, delay), delay);
-                    return;
-                }
+                // Draw horizontal divider
+                doc.setDrawColor(...primaryColor);
+                doc.setLineWidth(0.5);
+                doc.line(20, 40, 190, 40);
 
+                // User & Event Info
+                doc.setFontSize(12);
+                doc.setTextColor(...labelColor);
+                doc.text('Name:', 20, 55);
+                doc.text('Email:', 20, 65);
+                doc.text('Event:', 20, 75);
+                doc.text('Date:', 20, 85);
+                doc.text('Location:', 20, 95);
+                doc.text('Barangay:', 20, 105);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...secondaryColor);
+                doc.text(`${data.user.username}`, 50, 55);
+                doc.text(`${data.user.email}`, 50, 65);
+                doc.text(`${data.event.title}`, 50, 75);
+                doc.text(
+                    new Date(data.event.event_date).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                    }),
+                    50, 85
+                );
+                doc.text(`${data.event.location}`, 50, 95);
+                doc.text(`${data.event.barangay_name || 'N/A'}`, 50, 105);
+
+                // QR Code
                 try {
-                    new QRCode(canvas, {
-                        text: data.qr_code,
-                        width: 100,
-                        height: 100,
-                        colorDark: "#000000",
-                        colorLight: "#ffffff",
-                        correctLevel: QRCode.CorrectLevel.H
-                    });
+                    const qrCanvas = modalQRCode.querySelector('canvas');
+                    if (!qrCanvas) throw new Error('QR code canvas not found in modal');
 
-                    const qrImage = canvas.toDataURL('image/png');
-                    doc.addImage(qrImage, 'PNG', 80, 110, 50, 50);
+                    const qrImage = qrCanvas.toDataURL('image/png');
+                    if (qrImage === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJIAAACWCAYAAABs0x1ZAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABeSURBVHhe7cEBDQAAAMKg909tDjtwABS7sYMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB7B8HbgD4qS5cAAAAASUVORK5CYII=') {
+                        throw new Error('QR code canvas is empty');
+                    }
 
-                    // Add a border around the QR code
-                    doc.setDrawColor(76, 175, 80); // #4CAF50
-                    doc.setLineWidth(0.5);
-                    doc.rect(80, 110, 50, 50);
+                    doc.addImage(qrImage, 'PNG', 80, 120, 50, 50);
+                    doc.setDrawColor(...primaryColor);
+                    doc.rect(80, 120, 50, 50);
 
-                    // Add a note
+                    // Note
                     doc.setFontSize(10);
-                    doc.setTextColor(102, 102, 102); // #666
-                    doc.text('Present this QR code at the event for attendance verification.', 105, 170, { align: 'center' });
+                    doc.setTextColor(102, 102, 102);
+                    doc.setFont('helvetica', 'italic');
+                    doc.text('Present this QR code at the event for attendance verification.', 105, 180, {
+                        align: 'center'
+                    });
 
                     doc.save(`Event_${data.event.title}_Ticket.pdf`);
                     console.log('PDF generated successfully with QR code.');
                 } catch (error) {
-                    console.error('Failed to generate QR code for PDF:', error);
+                    console.error('Failed to add QR code to PDF:', error);
                     doc.setTextColor(220, 38, 38);
-                    doc.text('Error: Unable to generate QR code.', 20, 120);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('⚠ Unable to include QR code.', 20, 130);
                     doc.save(`Event_${data.event.title}_Ticket.pdf`);
+                    alert('Failed to include QR code in the PDF. The ticket has been downloaded without it.');
                 }
-            }
 
-            generateQRCodeForPDF();
+                loadingSpinner.classList.remove('active');
+            } catch (error) {
+                console.error('Failed to generate PDF:', error);
+                loadingSpinner.classList.remove('active');
+                alert('Error: Failed to generate PDF. Please try again: ' + error.message);
+            }
         }
+
 
         // Accessibility: Close modal with Escape key
         document.addEventListener('keydown', (e) => {
@@ -1717,4 +1974,5 @@ try {
         });
     </script>
 </body>
+
 </html>

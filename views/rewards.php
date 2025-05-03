@@ -40,7 +40,9 @@ try {
         $default_voucher_image = 'data:image/jpeg;base64,' . base64_encode($asset['asset_data']);
     }
 } catch (PDOException $e) {
-    $redeem_error = "Error fetching default voucher image: " . $e->getMessage();
+    $_SESSION['redeem_error'] = "Error fetching default voucher image: " . $e->getMessage();
+    header("Location: rewards.php?section=vouchers&error=voucher_image");
+    exit;
 }
 
 // Fetch user data
@@ -94,6 +96,12 @@ try {
     $logo_data = $stmt->fetchColumn();
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
 
+    // Determine the active section based on URL
+    $section = isset($_GET['section']) ? $_GET['section'] : 'vouchers';
+    if (!in_array($section, ['vouchers', 'withdraw'])) {
+        $section = 'vouchers'; // Default to vouchers if section is invalid
+    }
+
     // Pagination for vouchers
     $vouchers_per_page = 10; // Display 10 vouchers per page for a 5x2 grid
     $current_page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -132,249 +140,335 @@ try {
     // Handle Voucher Redemption
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['redeem_voucher'])) {
         if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-            $redeem_error = 'Invalid CSRF token. Please try again.';
-        } else {
-            $voucher_id = (int)$_POST['voucher_id'];
-
-            // Fetch the selected voucher
-            $stmt = $pdo->prepare("
-                SELECT name, description, points_cost, code, terms, partner, partner_contact, partner_website, expiry_date 
-                FROM vouchers 
-                WHERE voucher_id = :voucher_id
-            ");
-            $stmt->execute(['voucher_id' => $voucher_id]);
-            $voucher = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($voucher) {
-                $points_cost = $voucher['points_cost'];
-
-                // Check redemption limit (e.g., max 1 per user per voucher)
-                $stmt = $pdo->prepare("
-                    SELECT COUNT(*) 
-                    FROM activities 
-                    WHERE user_id = :user_id 
-                    AND description LIKE :description
-                ");
-                $stmt->execute([
-                    'user_id' => $user_id,
-                    'description' => "%Redeemed voucher: {$voucher['name']}%"
-                ]);
-                $redeem_count = $stmt->fetchColumn();
-
-                if ($redeem_count >= 1) {
-                    $redeem_error = 'You have already redeemed this voucher. Limit: 1 per user.';
-                } elseif ($eco_points < $points_cost) {
-                    $redeem_error = 'Insufficient eco points to redeem this voucher.';
-                } else {
-                    // Start transaction
-                    $pdo->beginTransaction();
-                    try {
-                        // Deduct points
-                        $stmt = $pdo->prepare("UPDATE users SET eco_points = eco_points - :points WHERE user_id = :user_id");
-                        $stmt->execute(['points' => $points_cost, 'user_id' => $user_id]);
-
-                        // Calculate expiry date (e.g., 30 days from redemption)
-                        $redeemed_at = date('Y-m-d H:i:s');
-                        $expiry_date = date('Y-m-d H:i:s', strtotime($redeemed_at . ' +30 days'));
-
-                        // Log activity with detailed info
-                        $stmt = $pdo->prepare("
-                            INSERT INTO activities (
-                                user_id, description, activity_type, reward_type, reward_value, eco_points, created_at
-                            ) VALUES (
-                                :user_id, :description, 'reward', 'voucher', :reward_value, :eco_points, NOW()
-                            )
-                        ");
-                        $stmt->execute([
-                            'user_id' => $user_id,
-                            'description' => "Redeemed voucher: {$voucher['name']} for $points_cost points",
-                            'reward_value' => $voucher['name'],
-                            'eco_points' => $points_cost
-                        ]);
-
-                        // Store voucher details in session for PDF generation
-                        $_SESSION['redeemed_voucher'] = [
-                            'name' => $voucher['name'],
-                            'code' => $voucher['code'],
-                            'points_cost' => $points_cost,
-                            'terms' => $voucher['terms'],
-                            'partner' => $voucher['partner'],
-                            'partner_contact' => $voucher['partner_contact'],
-                            'partner_website' => $voucher['partner_website'],
-                            'expiry_date' => $expiry_date,
-                            'redeemed_at' => $redeemed_at
-                        ];
-
-                        $eco_points -= $points_cost;
-                        $pdo->commit();
-                        $voucher_redeem_message = "Successfully redeemed {$voucher['name']}!";
-                    } catch (Exception $e) {
-                        $pdo->rollBack();
-                        $redeem_error = "Error redeeming voucher: " . $e->getMessage();
-                    }
-                }
-            } else {
-                $redeem_error = 'Invalid voucher selected.';
+            $_SESSION['redeem_error'] = 'Invalid CSRF token. Please try again.';
+            $redirect_url = "rewards.php?section=vouchers";
+            if ($current_page > 1) {
+                $redirect_url .= "&page=$current_page";
             }
+            $redirect_url .= "&error=csrf";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        $voucher_id = (int)$_POST['voucher_id'];
+
+        // Fetch the selected voucher
+        $stmt = $pdo->prepare("
+            SELECT name, description, points_cost, code, terms, partner, partner_contact, partner_website, expiry_date 
+            FROM vouchers 
+            WHERE voucher_id = :voucher_id
+        ");
+        $stmt->execute(['voucher_id' => $voucher_id]);
+        $voucher = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$voucher) {
+            $_SESSION['redeem_error'] = 'Invalid voucher selected.';
+            $redirect_url = "rewards.php?section=vouchers";
+            if ($current_page > 1) {
+                $redirect_url .= "&page=$current_page";
+            }
+            $redirect_url .= "&error=invalid_voucher";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        $points_cost = $voucher['points_cost'];
+
+        // Check redemption limit (e.g., max 1 per user per voucher)
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM voucher_claims 
+            WHERE user_id = :user_id 
+            AND voucher_id = :voucher_id
+        ");
+        $stmt->execute([
+            'user_id' => $user_id,
+            'voucher_id' => $voucher_id
+        ]);
+        $redeem_count = $stmt->fetchColumn();
+
+        if ($redeem_count >= 1) {
+            $_SESSION['redeem_error'] = 'You have already redeemed this voucher. Limit: 1 per user.';
+            $redirect_url = "rewards.php?section=vouchers";
+            if ($current_page > 1) {
+                $redirect_url .= "&page=$current_page";
+            }
+            $redirect_url .= "&error=redeem_limit";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        if ($eco_points < $points_cost) {
+            $_SESSION['redeem_error'] = 'Insufficient eco points to redeem this voucher.';
+            $redirect_url = "rewards.php?section=vouchers";
+            if ($current_page > 1) {
+                $redirect_url .= "&page=$current_page";
+            }
+            $redirect_url .= "&error=insufficient_points";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        // Start transaction
+        $pdo->beginTransaction();
+        try {
+            // Deduct points
+            $stmt = $pdo->prepare("UPDATE users SET eco_points = eco_points - :points WHERE user_id = :user_id");
+            $stmt->execute(['points' => $points_cost, 'user_id' => $user_id]);
+
+            // Calculate expiry date (e.g., 30 days from redemption)
+            $redeemed_at = date('Y-m-d H:i:s');
+            $expiry_date = date('Y-m-d H:i:s', strtotime($redeemed_at . ' +30 days'));
+
+            // Generate QR code string
+            $qr_code_data = "voucher:{$voucher['code']}:user:{$user_id}:redeemed_at:{$redeemed_at}";
+
+            // Log activity in voucher_claims table
+            $stmt = $pdo->prepare("
+                INSERT INTO voucher_claims (
+                    user_id, voucher_id, code, qr_code, redeemed_at, expiry_date
+                ) VALUES (
+                    :user_id, :voucher_id, :code, :qr_code, :redeemed_at, :expiry_date
+                )
+            ");
+            $stmt->execute([
+                'user_id' => $user_id,
+                'voucher_id' => $voucher_id,
+                'code' => $voucher['code'],
+                'qr_code' => $qr_code_data,
+                'redeemed_at' => $redeemed_at,
+                'expiry_date' => $expiry_date
+            ]);
+
+            // Log activity in activities table for general tracking
+            $stmt = $pdo->prepare("
+                INSERT INTO activities (
+                    user_id, description, activity_type, reward_type, reward_value, eco_points, created_at
+                ) VALUES (
+                    :user_id, :description, 'reward', 'voucher', :reward_value, :eco_points, NOW()
+                )
+            ");
+            $stmt->execute([
+                'user_id' => $user_id,
+                'description' => "Redeemed voucher: {$voucher['name']} for $points_cost points",
+                'reward_value' => $voucher['name'],
+                'eco_points' => $points_cost
+            ]);
+
+            // Store voucher details in session for modal and PDF generation
+            $_SESSION['redeemed_voucher'] = [
+                'name' => $voucher['name'],
+                'code' => $voucher['code'],
+                'points_cost' => $points_cost,
+                'terms' => $voucher['terms'],
+                'partner' => $voucher['partner'],
+                'partner_contact' => $voucher['partner_contact'],
+                'partner_website' => $voucher['partner_website'],
+                'expiry_date' => $expiry_date,
+                'redeemed_at' => $redeemed_at,
+                'qr_code' => $qr_code_data
+            ];
+
+            $eco_points -= $points_cost;
+            $pdo->commit();
+            $voucher_redeem_message = "Successfully redeemed {$voucher['name']}!";
+            $redirect_url = "rewards.php?section=vouchers";
+            if ($current_page > 1) {
+                $redirect_url .= "&page=$current_page";
+            }
+            $redirect_url .= "&success=voucher";
+            header("Location: $redirect_url");
+            exit;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $_SESSION['redeem_error'] = "Error redeeming voucher: " . $e->getMessage();
+            $redirect_url = "rewards.php?section=vouchers";
+            if ($current_page > 1) {
+                $redirect_url .= "&page=$current_page";
+            }
+            $redirect_url .= "&error=redeem_voucher";
+            header("Location: $redirect_url");
+            exit;
         }
     }
 
     // Handle Cash Withdrawal
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['withdraw_cash'])) {
         if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-            $redeem_error = 'Invalid CSRF token. Please try again.';
-        } else {
-            $amount_points = (int)$_POST['amount_points'];
-            $minimum_points = 100; // Set minimum withdrawal to 100 points
+            $_SESSION['redeem_error'] = 'Invalid CSRF token. Please try again.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=csrf_withdraw";
+            header("Location: $redirect_url");
+            exit;
+        }
 
-            // Rate limiting: max 3 withdrawals per hour
-            $current_time = time();
-            $withdrawal_attempts = array_filter($withdrawal_attempts, function($timestamp) {
-                return (time() - $timestamp) < 3600; // Within 1 hour
-            });
+        $amount_points = (int)$_POST['amount_points'];
+        $minimum_points = 100; // Set minimum withdrawal to 100 points
+
+        // Rate limiting: max 3 withdrawals per hour
+        $current_time = time();
+        $withdrawal_attempts = array_filter($withdrawal_attempts, function($timestamp) {
+            return (time() - $timestamp) < 3600; // Within 1 hour
+        });
+        $_SESSION['withdrawal_attempts'] = $withdrawal_attempts;
+
+        if (count($withdrawal_attempts) >= 5) {
+            $_SESSION['redeem_error'] = 'Withdrawal limit reached. Please try again later.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=withdraw_limit";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        if ($amount_points < $minimum_points) {
+            $_SESSION['redeem_error'] = "Minimum withdrawal is $minimum_points points.";
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=minimum_withdraw";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        if ($amount_points > $eco_points) {
+            $_SESSION['redeem_error'] = 'Insufficient eco points for this withdrawal.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=insufficient_points_withdraw";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        if (!$paypal_email) {
+            $_SESSION['redeem_error'] = 'Please set your PayPal email in Payment Methods to proceed.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=no_paypal_email";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        // Conversion rate: 1 point = 0.5 PHP
+        $cash_amount = $amount_points * 0.5;
+
+        // Start transaction
+        $pdo->beginTransaction();
+        try {
+            // Deduct points
+            $stmt = $pdo->prepare("UPDATE users SET eco_points = eco_points - :points WHERE user_id = :user_id");
+            $stmt->execute(['points' => $amount_points, 'user_id' => $user_id]);
+
+            // Log activity with detailed info
+            $stmt = $pdo->prepare("
+                INSERT INTO activities (
+                    user_id, description, activity_type, reward_type, reward_value, eco_points, created_at
+                ) VALUES (
+                    :user_id, :description, 'reward', 'cash', :reward_value, :eco_points, NOW()
+                )
+            ");
+            $stmt->execute([
+                'user_id' => $user_id,
+                'description' => "Withdrew ₱$cash_amount ($amount_points points) via PayPal to $paypal_email",
+                'reward_value' => "₱" . number_format($cash_amount, 2),
+                'eco_points' => $amount_points
+            ]);
+
+            // Store withdrawal details in session for success modal
+            $_SESSION['withdrawal_success'] = [
+                'cash_amount' => $cash_amount,
+                'points' => $amount_points,
+                'paypal_email' => $paypal_email,
+                'withdrawn_at' => date('Y-m-d H:i:s')
+            ];
+
+            $withdrawal_attempts[] = $current_time;
             $_SESSION['withdrawal_attempts'] = $withdrawal_attempts;
 
-            if (count($withdrawal_attempts) >= 3) {
-                $redeem_error = 'Withdrawal limit reached. Please try again later.';
-            } elseif ($amount_points < $minimum_points) {
-                $redeem_error = "Minimum withdrawal is $minimum_points points.";
-            } elseif ($amount_points > $eco_points) {
-                $redeem_error = 'Insufficient eco points for this withdrawal.';
-            } elseif (!$paypal_email) {
-                $redeem_error = 'Please set your PayPal email in Payment Methods to proceed.';
-            } else {
-                // Conversion rate: 1 point = 0.5 PHP
-                $cash_amount = $amount_points * 0.5;
-
-                // Start transaction
-                $pdo->beginTransaction();
-                try {
-                    // Deduct points
-                    $stmt = $pdo->prepare("UPDATE users SET eco_points = eco_points - :points WHERE user_id = :user_id");
-                    $stmt->execute(['points' => $amount_points, 'user_id' => $user_id]);
-
-                    // Log activity with detailed info
-                    $stmt = $pdo->prepare("
-                        INSERT INTO activities (
-                            user_id, description, activity_type, reward_type, reward_value, eco_points, created_at
-                        ) VALUES (
-                            :user_id, :description, 'reward', 'cash', :reward_value, :eco_points, NOW()
-                        )
-                    ");
-                    $stmt->execute([
-                        'user_id' => $user_id,
-                        'description' => "Withdrew ₱$cash_amount ($amount_points points) via PayPal to $paypal_email",
-                        'reward_value' => "₱" . number_format($cash_amount, 2),
-                        'eco_points' => $amount_points
-                    ]);
-
-                    // Store withdrawal details in session for success modal
-                    $_SESSION['withdrawal_success'] = [
-                        'cash_amount' => $cash_amount,
-                        'points' => $amount_points,
-                        'paypal_email' => $paypal_email,
-                        'withdrawn_at' => date('Y-m-d H:i:s')
-                    ];
-
-                    $withdrawal_attempts[] = $current_time;
-                    $_SESSION['withdrawal_attempts'] = $withdrawal_attempts;
-
-                    $eco_points -= $amount_points;
-                    $pdo->commit();
-                    $withdraw_message = "Successfully requested withdrawal of ₱$cash_amount to $paypal_email.";
-                } catch (Exception $e) {
-                    $pdo->rollBack();
-                    $redeem_error = "Error processing withdrawal: " . $e->getMessage();
-                }
-            }
+            $eco_points -= $amount_points;
+            $pdo->commit();
+            $withdraw_message = "Successfully requested withdrawal of ₱$cash_amount to $paypal_email.";
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&success=withdrawal";
+            header("Location: $redirect_url");
+            exit;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $_SESSION['redeem_error'] = "Error processing withdrawal: " . $e->getMessage();
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=withdraw_error";
+            header("Location: $redirect_url");
+            exit;
         }
     }
 
     // Handle PayPal Email Update from Modal
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_paypal_email'])) {
         if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-            $redeem_error = 'Invalid CSRF token. Please try again.';
-        } else {
-            $new_paypal_email = trim($_POST['paypal_email']);
+            $_SESSION['redeem_error'] = 'Invalid CSRF token. Please try again.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=csrf_paypal";
+            header("Location: $redirect_url");
+            exit;
+        }
 
-            if (empty($new_paypal_email)) {
-                $redeem_error = 'PayPal email is required.';
-            } elseif (!filter_var($new_paypal_email, FILTER_VALIDATE_EMAIL)) {
-                $redeem_error = 'Please enter a valid PayPal email address.';
-            } else {
-                $stmt = $pdo->prepare("UPDATE users SET paypal_email = :paypal_email WHERE user_id = :user_id");
-                $stmt->execute([
-                    'paypal_email' => $new_paypal_email,
-                    'user_id' => $user_id
-                ]);
+        $new_paypal_email = trim($_POST['paypal_email']);
 
-                $paypal_email = $new_paypal_email;
-                $withdraw_message = 'PayPal email updated successfully! You can now proceed with your withdrawal.';
-            }
+        if (empty($new_paypal_email)) {
+            $_SESSION['redeem_error'] = 'PayPal email is required.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=empty_paypal_email";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        if (!filter_var($new_paypal_email, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['redeem_error'] = 'Please enter a valid PayPal email address.';
+            $redirect_url = "rewards.php?section=withdraw";
+            $redirect_url .= "&error=invalid_paypal_email";
+            header("Location: $redirect_url");
+            exit;
+        }
+
+        $stmt = $pdo->prepare("UPDATE users SET paypal_email = :paypal_email WHERE user_id = :user_id");
+        $stmt->execute([
+            'paypal_email' => $new_paypal_email,
+            'user_id' => $user_id
+        ]);
+
+        $paypal_email = $new_paypal_email;
+        $withdraw_message = 'PayPal email updated successfully! You can now proceed with your withdrawal.';
+        $redirect_url = "rewards.php?section=withdraw";
+        $redirect_url .= "&success=paypal";
+        header("Location: $redirect_url");
+        exit;
+    }
+
+    // Handle success and error messages from redirects
+    if (isset($_GET['success'])) {
+        if ($_GET['success'] === 'withdrawal' && isset($_SESSION['withdrawal_success'])) {
+            $withdraw_message = "Successfully requested withdrawal of ₱" . htmlspecialchars(number_format($_SESSION['withdrawal_success']['cash_amount'], 2)) . " to " . htmlspecialchars($_SESSION['withdrawal_success']['paypal_email']) . ".";
+        } elseif ($_GET['success'] === 'voucher' && isset($_SESSION['redeemed_voucher'])) {
+            $voucher_redeem_message = "Successfully redeemed " . htmlspecialchars($_SESSION['redeemed_voucher']['name']) . "!";
+        } elseif ($_GET['success'] === 'paypal') {
+            $withdraw_message = 'PayPal email updated successfully! You can now proceed with your withdrawal.';
         }
     }
 
+    if (isset($_GET['error']) && isset($_SESSION['redeem_error'])) {
+        $redeem_error = $_SESSION['redeem_error'];
+        unset($_SESSION['redeem_error']); // Clear the error after displaying
+    }
+
 } catch (PDOException $e) {
-    $error_message = "Error: " . $e->getMessage();
+    $_SESSION['error_message'] = "Error: " . $e->getMessage();
+    $redirect_url = "rewards.php?section=vouchers";
+    if ($current_page > 1) {
+        $redirect_url .= "&page=$current_page";
+    }
+    $redirect_url .= "&error=database";
+    header("Location: $redirect_url");
+    exit;
 }
 
-// Handle PDF Download for Voucher
-if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
-    require_once '../vendor/autoload.php'; // Include TCPDF library (assumed to be installed via Composer)
-    $voucher = $_SESSION['redeemed_voucher'];
-
-    // Create new PDF document
-    $pdf = new \TCPDF();
-    $pdf->SetCreator('Green Roots');
-    $pdf->SetAuthor('Green Roots');
-    $pdf->SetTitle('Voucher Redemption');
-    $pdf->SetMargins(15, 15, 15);
-    $pdf->AddPage();
-
-    // Set font
-    $pdf->SetFont('helvetica', '', 12);
-
-    // Add logo (placeholder)
-    $pdf->Image('https://via.placeholder.com/50?text=Logo', 15, 15, 30, 30);
-
-    // Title
-    $pdf->SetXY(15, 50);
-    $pdf->SetFont('helvetica', 'B', 16);
-    $pdf->Cell(0, 10, 'Green Roots Voucher', 0, 1, 'C');
-
-    // Voucher Details
-    $pdf->SetFont('helvetica', '', 12);
-    $pdf->SetXY(15, 70);
-    $pdf->Cell(0, 10, "Voucher Name: " . htmlspecialchars($voucher['name']), 0, 1);
-    $pdf->Cell(0, 10, "Voucher Code: " . htmlspecialchars($voucher['code']), 0, 1);
-    $pdf->Cell(0, 10, "Points Cost: " . htmlspecialchars($voucher['points_cost']) . " Eco Points", 0, 1);
-    $pdf->Cell(0, 10, "Redeemed At: " . htmlspecialchars($voucher['redeemed_at']), 0, 1);
-    $pdf->Cell(0, 10, "Expires On: " . htmlspecialchars($voucher['expiry_date']), 0, 1);
-
-    // Partner Details
-    $pdf->Ln(10);
-    $pdf->SetFont('helvetica', 'B', 12);
-    $pdf->Cell(0, 10, "Business Partner Information", 0, 1);
-    $pdf->SetFont('helvetica', '', 12);
-    $pdf->Cell(0, 10, "Partner: " . htmlspecialchars($voucher['partner']), 0, 1);
-    $pdf->Cell(0, 10, "Contact: " . htmlspecialchars($voucher['partner_contact']), 0, 1);
-    $pdf->Cell(0, 10, "Website: " . htmlspecialchars($voucher['partner_website']), 0, 1);
-
-    // Terms
-    $pdf->Ln(10);
-    $pdf->SetFont('helvetica', 'B', 12);
-    $pdf->Cell(0, 10, "Terms and Conditions", 0, 1);
-    $pdf->SetFont('helvetica', '', 12);
-    $pdf->MultiCell(0, 10, htmlspecialchars($voucher['terms']), 0, 1);
-
-    // QR Code Placeholder
-    $pdf->Ln(10);
-    $pdf->SetFont('helvetica', 'I', 12);
-    $pdf->Cell(0, 10, "[QR Code for Authentication]", 0, 1, 'C');
-
-    // Output PDF
-    $pdf->Output('voucher_' . $voucher['code'] . '.pdf', 'D');
-    exit;
+if (isset($_GET['error']) && isset($_SESSION['error_message'])) {
+    $error_message = $_SESSION['error_message'];
+    unset($_SESSION['error_message']);
 }
 ?>
 <!DOCTYPE html>
@@ -933,9 +1027,10 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
 
         .modal-content .redeem-message,
         .modal-content .withdraw-message {
-            font-size: 16px;
+            font-size: 20px;
+            font-weight: bold;
             color: #4CAF50;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
             text-align: center;
         }
 
@@ -988,6 +1083,14 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             height: 30px;
             animation: spin 1s linear infinite;
             margin: 10px auto;
+        }
+
+        .modal-content #voucherQRCode {
+            margin: 15px auto;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         @keyframes spin {
@@ -1325,7 +1428,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             <a href="submit.php" title="Submit Planting"><i class="fas fa-leaf"></i></a>
             <a href="planting_site.php" title="Planting Site"><i class="fas fa-map-pin"></i></a>
             <a href="leaderboard.php" title="Leaderboard"><i class="fas fa-crown"></i></a>
-            <a href="rewards.php" title="Rewards"><i class="fas fa-gift"></i></a>
+            <a href="rewards.php?section=vouchers" title="Rewards"><i class="fas fa-gift"></i></a>
             <a href="events.php" title="Events"><i class="fas fa-calendar-days"></i></a>
             <a href="history.php" title="History"><i class="fas fa-clock"></i></a>
             <a href="feedback.php" title="Feedback"><i class="fas fa-comment"></i></a>
@@ -1364,11 +1467,11 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                     Your Eco Points: <span><?php echo $eco_points; ?></span>
                 </div>
                 <div class="reward-nav">
-                    <button id="voucherBtn" class="active"><i class="fas fa-ticket-alt"></i> Exchange for Vouchers</button>
-                    <button id="cashBtn"><i class="fas fa-wallet"></i> Withdraw as Cash</button>
+                    <button id="voucherBtn" class="<?php echo $section === 'vouchers' ? 'active' : ''; ?>"><i class="fas fa-ticket-alt"></i> Exchange for Vouchers</button>
+                    <button id="cashBtn" class="<?php echo $section === 'withdraw' ? 'active' : ''; ?>"><i class="fas fa-wallet"></i> Withdraw as Cash</button>
                 </div>
                 <!-- Voucher Redemption -->
-                <div class="redeem-options active" id="voucherSection">
+                <div class="redeem-options <?php echo $section === 'vouchers' ? 'active' : ''; ?>" id="voucherSection">
                     <div class="voucher-grid">
                         <?php foreach ($vouchers as $voucher): ?>
                             <div class="voucher-card" onclick="openVoucherModal(<?php echo $voucher['voucher_id']; ?>, '<?php echo htmlspecialchars(json_encode($voucher), ENT_QUOTES); ?>')">
@@ -1380,12 +1483,12 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
                     </div>
                     <div class="pagination">
                         <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                            <a href="?page=<?php echo $i; ?>" class="<?php echo $i === $current_page ? 'active' : ''; ?>"><?php echo $i; ?></a>
+                            <a href="?section=vouchers&page=<?php echo $i; ?>" class="<?php echo $i === $current_page ? 'active' : ''; ?>"><?php echo $i; ?></a>
                         <?php endfor; ?>
                     </div>
                 </div>
                 <!-- Cash Withdrawal -->
-                <div class="redeem-options" id="cashSection">
+                <div class="redeem-options <?php echo $section === 'withdraw' ? 'active' : ''; ?>" id="cashSection">
                     <div class="redeem-option">
                         <h3><i class="fas fa-wallet"></i> Withdraw as Cash via PayPal</h3>
                         <p>
@@ -1435,12 +1538,13 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             <?php if ($voucher_redeem_message && isset($_SESSION['redeemed_voucher'])): ?>
                 <div class="modal active" id="voucherSuccessModal">
                     <div class="modal-content">
-                        <span class="close-btn" onclick="closeModal('voucherSuccessModal')">×</span>
+                        <span class="close-btn" onclick="closeSuccessModal('voucherSuccessModal')">×</span>
                         <div class="redeem-message"><?php echo htmlspecialchars($voucher_redeem_message); ?></div>
                         <p><strong>Voucher Code:</strong> <?php echo htmlspecialchars($_SESSION['redeemed_voucher']['code']); ?></p>
                         <p><strong>Expires On:</strong> <?php echo htmlspecialchars($_SESSION['redeemed_voucher']['expiry_date']); ?></p>
-                        <button onclick="window.location.href='?download_pdf=1'">Download PDF</button>
-                        <button class="secondary" onclick="closeModal('voucherSuccessModal')">Close</button>
+                        <div id="voucherQRCode"></div>
+                        <button onclick="generateVoucherPDF()">Download EcoVoucher Pass</button>
+                        <button class="secondary" onclick="closeSuccessModal('voucherSuccessModal')">Close</button>
                     </div>
                 </div>
             <?php endif; ?>
@@ -1465,13 +1569,13 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             <?php if ($withdraw_message && isset($_SESSION['withdrawal_success'])): ?>
                 <div class="modal active" id="withdrawSuccessModal">
                     <div class="modal-content">
-                        <span class="close-btn" onclick="closeModal('withdrawSuccessModal')">×</span>
+                        <span class="close-btn" onclick="closeSuccessModal('withdrawSuccessModal')">×</span>
                         <div class="withdraw-message"><?php echo htmlspecialchars($withdraw_message); ?></div>
                         <p><strong>Amount:</strong> ₱<?php echo htmlspecialchars(number_format($_SESSION['withdrawal_success']['cash_amount'], 2)); ?></p>
                         <p><strong>Points Deducted:</strong> <?php echo htmlspecialchars($_SESSION['withdrawal_success']['points']); ?> points</p>
                         <p><strong>PayPal Email:</strong> <?php echo htmlspecialchars($_SESSION['withdrawal_success']['paypal_email']); ?></p>
                         <p><strong>Withdrawn At:</strong> <?php echo htmlspecialchars($_SESSION['withdrawal_success']['withdrawn_at']); ?></p>
-                        <button class="secondary" onclick="closeModal('withdrawSuccessModal')">Close</button>
+                        <button class="secondary" onclick="closeSuccessModal('withdrawSuccessModal')">Close</button>
                     </div>
                 </div>
             <?php endif; ?>
@@ -1492,6 +1596,8 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="../assets/js/jsPDF-3.0.1/dist/jspdf.umd.min.js"></script>
     <script>
         // Search bar functionality
         const functionalities = [
@@ -1499,7 +1605,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             { name: 'Submit Planting', url: 'submit.php' },
             { name: 'Planting Site', url: 'planting_site.php' },
             { name: 'Leaderboard', url: 'leaderboard.php' },
-            { name: 'Rewards', url: 'rewards.php' },
+            { name: 'Rewards', url: 'rewards.php?section=vouchers' },
             { name: 'Events', url: 'events.php' },
             { name: 'History', url: 'history.php' },
             { name: 'Feedback', url: 'feedback.php' },
@@ -1557,11 +1663,26 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         const voucherSection = document.querySelector('#voucherSection');
         const cashSection = document.querySelector('#cashSection');
 
+        function updateURL(section, page = null) {
+            const url = new URL(window.location);
+            url.searchParams.set('section', section);
+            // Clear error or success parameters to avoid persistence
+            url.searchParams.delete('error');
+            url.searchParams.delete('success');
+            if (page) {
+                url.searchParams.set('page', page);
+            } else if (section === 'vouchers' && !url.searchParams.has('page')) {
+                url.searchParams.delete('page'); // Reset pagination only if not set and switching to vouchers
+            }
+            window.history.pushState({}, '', url);
+        }
+
         voucherBtn.addEventListener('click', function() {
             voucherBtn.classList.add('active');
             cashBtn.classList.remove('active');
             voucherSection.classList.add('active');
             cashSection.classList.remove('active');
+            updateURL('vouchers');
         });
 
         cashBtn.addEventListener('click', function() {
@@ -1569,6 +1690,7 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
             voucherBtn.classList.remove('active');
             cashSection.classList.add('active');
             voucherSection.classList.remove('active');
+            updateURL('withdraw');
         });
 
         // Modal functionality
@@ -1631,6 +1753,162 @@ if (isset($_GET['download_pdf']) && isset($_SESSION['redeemed_voucher'])) {
         function showSpinner(spinnerId) {
             const spinner = document.querySelector(`#${spinnerId}`);
             spinner.style.display = 'block';
+        }
+
+        // QR Code Generation for Voucher Success Modal
+        function generateQRCode(element, data) {
+            element.innerHTML = '';
+            try {
+                new QRCode(element, {
+                    text: data,
+                    width: 150,
+                    height: 150,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+                console.log('Voucher QR code generated successfully.');
+            } catch (error) {
+                console.error('Failed to generate QR code:', error);
+                element.innerHTML = '<p style="color: #dc2626;">Error: Failed to generate QR code. Please try again.</p>';
+            }
+        }
+
+        // Generate QR code when voucher success modal is displayed
+        window.addEventListener('load', function() {
+            const voucherSuccessModal = document.querySelector('#voucherSuccessModal');
+            if (voucherSuccessModal && voucherSuccessModal.classList.contains('active')) {
+                const voucherQRCode = document.querySelector('#voucherQRCode');
+                const qrCodeData = "<?php echo isset($_SESSION['redeemed_voucher']['qr_code']) ? htmlspecialchars($_SESSION['redeemed_voucher']['qr_code']) : ''; ?>";
+                if (qrCodeData) {
+                    generateQRCode(voucherQRCode, qrCodeData);
+                }
+            }
+        });
+
+        // Generate PDF for Voucher (EcoVoucher Pass)
+        function generateVoucherPDF() {
+            const voucherData = <?php echo isset($_SESSION['redeemed_voucher']) ? json_encode($_SESSION['redeemed_voucher']) : 'null'; ?>;
+            if (!voucherData) {
+                alert('Voucher data not available.');
+                return;
+            }
+
+            const loadingSpinner = document.querySelector('#redeemSpinner');
+            loadingSpinner.classList.add('active');
+
+            try {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+
+                // Fonts and colors
+                const primaryColor = [76, 175, 80]; // #4CAF50
+                const secondaryColor = [51, 51, 51]; // #333
+                const labelColor = [120, 120, 120]; // #777
+
+                // Header
+                doc.setFontSize(22);
+                doc.setTextColor(...primaryColor);
+                doc.setFont('helvetica', 'bold');
+                doc.text('EcoVoucher Pass', 105, 25, { align: 'center' });
+
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...secondaryColor);
+                doc.text('Presented by Green Roots Initiative', 105, 35, { align: 'center' });
+
+                // Draw horizontal divider
+                doc.setDrawColor(...primaryColor);
+                doc.setLineWidth(0.5);
+                doc.line(20, 40, 190, 40);
+
+                // Voucher Info
+                doc.setFontSize(12);
+                doc.setTextColor(...labelColor);
+                doc.text('Voucher Name:', 20, 55);
+                doc.text('Voucher Code:', 20, 65);
+                doc.text('Points Cost:', 20, 75);
+                doc.text('Redeemed At:', 20, 85);
+                doc.text('Expires On:', 20, 95);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...secondaryColor);
+                doc.text(`${voucherData.name}`, 50, 55);
+                doc.text(`${voucherData.code}`, 50, 65);
+                doc.text(`${voucherData.points_cost} Eco Points`, 50, 75);
+                doc.text(`${voucherData.redeemed_at}`, 50, 85);
+                doc.text(`${voucherData.expiry_date}`, 50, 95);
+
+                // Partner Info
+                doc.setFontSize(12);
+                doc.setTextColor(...labelColor);
+                doc.text('Partner:', 20, 115);
+                doc.text('Contact:', 20, 125);
+                doc.text('Website:', 20, 135);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...secondaryColor);
+                doc.text(`${voucherData.partner}`, 50, 115);
+                doc.text(`${voucherData.partner_contact}`, 50, 125);
+                doc.text(`${voucherData.partner_website}`, 50, 135);
+
+                // Terms
+                doc.setFontSize(12);
+                doc.setTextColor(...labelColor);
+                doc.text('Terms and Conditions:', 20, 155);
+
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...secondaryColor);
+                doc.text(voucherData.terms, 20, 165, { maxWidth: 170 });
+
+                // QR Code
+                try {
+                    const qrCanvas = document.querySelector('#voucherQRCode canvas');
+                    if (!qrCanvas) throw new Error('QR code canvas not found in modal');
+
+                    const qrImage = qrCanvas.toDataURL('image/png');
+                    if (qrImage === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJIAAACWCAYAAABs0x1ZAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABeSURBVHhe7cEBDQAAAMKg909tDjtwABS7sYMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB7B8HbgD4qS5cAAAAASUVORK5CYII=') {
+                        throw new Error('QR code canvas is empty');
+                    }
+
+                    doc.addImage(qrImage, 'PNG', 80, 190, 50, 50);
+                    doc.setDrawColor(...primaryColor);
+                    doc.rect(80, 190, 50, 50);
+
+                    // Note
+                    doc.setFontSize(10);
+                    doc.setTextColor(102, 102, 102);
+                    doc.setFont('helvetica', 'italic');
+                    doc.text('Scan this QR code for quick authentication.', 105, 250, { align: 'center' });
+
+                    doc.save(`EcoVoucher_${voucherData.code}_Pass.pdf`);
+                    console.log('PDF generated successfully with QR code.');
+                } catch (error) {
+                    console.error('Failed to add QR code to PDF:', error);
+                    doc.setTextColor(220, 38, 38);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('⚠ Unable to include QR code.', 20, 200);
+                    doc.save(`EcoVoucher_${voucherData.code}_Pass.pdf`);
+                    alert('Failed to include QR code in the PDF. The EcoVoucher Pass has been downloaded without it.');
+                }
+
+                loadingSpinner.classList.remove('active');
+            } catch (error) {
+                console.error('Failed to generate PDF:', error);
+                loadingSpinner.classList.remove('active');
+                alert('Error: Failed to generate PDF. Please try again: ' + error.message);
+            }
+        }
+
+        // Close success modal and clear success URL
+        function closeSuccessModal(modalId) {
+            const modal = document.querySelector(`#${modalId}`);
+            if (modal) {
+                modal.classList.remove('active');
+                const url = new URL(window.location);
+                url.searchParams.delete('success');
+                window.history.pushState({}, '', url);
+            }
         }
     </script>
 </body>
