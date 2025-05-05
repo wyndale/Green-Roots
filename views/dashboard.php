@@ -12,7 +12,13 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 // Fetch user data
 try {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
+    $stmt = $pdo->prepare("
+        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.role, u.barangay_id, u.trees_planted, u.eco_points, u.first_name,
+               b.name as barangay_name, b.city as city_name, b.province as province_name, b.region as region_name
+        FROM users u 
+        LEFT JOIN barangays b ON u.barangay_id = b.barangay_id
+        WHERE u.user_id = :user_id
+    ");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -31,13 +37,10 @@ try {
         $asset = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($asset && $asset['asset_data']) {
-            // Determine MIME type based on asset_type or file content
             $mime_type = 'image/jpeg'; // Default
             if ($asset['asset_type'] === 'default_profile') {
-                // Since you confirmed it's PNG
                 $mime_type = 'image/png';
             } else {
-                // Optionally, detect MIME type dynamically
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mime_type = finfo_buffer($finfo, $asset['asset_data']);
                 finfo_close($finfo);
@@ -84,21 +87,24 @@ try {
     $user_rank = $stmt->fetchColumn();
     $user_rank_display = $user_rank !== false ? $user_rank : "Not Ranked";
 
-    // Fetch the 3 most recent upcoming events
+    // Fetch the 3 most recent upcoming events in the user's region
     $stmt = $pdo->prepare("
-        SELECT title, event_date, location 
-        FROM events 
-        WHERE event_date >= CURDATE() 
-        ORDER BY event_date ASC 
+        SELECT e.title, e.event_date, e.location 
+        FROM events e
+        LEFT JOIN barangays b ON e.barangay_id = b.barangay_id
+        WHERE e.event_date >= CURDATE() 
+        AND b.region = :region
+        ORDER BY e.event_date ASC 
         LIMIT 3
     ");
-    $stmt->execute();
+    $stmt->execute(['region' => $user['region_name']]);
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -107,547 +113,8 @@ try {
     <title>Dashboard</title>
     <link rel="icon" type="image/png" sizes="64x64" href="<?php echo $icon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/dashboard.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Arial', sans-serif;
-        }
-
-        body {
-            background: #f5f7fa;
-            color: #333;
-        }
-
-        .container {
-            display: flex;
-            min-height: 100vh;
-            max-width: 1920px;
-            margin: 0 auto;
-        }
-
-        .sidebar {
-            width: 80px;
-            background: #fff;
-            padding: 17px 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            border-radius: 0 20px 20px 0;
-            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
-            position: fixed;
-            top: 0;
-            bottom: 0;
-        }
-
-        .sidebar img.logo {
-            width: 70px;
-            margin-bottom: 20px;
-        }
-
-        .sidebar a {
-            margin: 18px 0;
-            color: #666;
-            text-decoration: none;
-            font-size: 24px;
-            transition: transform 0.3s, color 0.3s;
-        }
-
-        .sidebar a:hover {
-            color: #4CAF50;
-            animation: bounce 0.3s ease-out;
-        }
-
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-
-        .main-content {
-            flex: 1;
-            padding: 40px;
-            margin-left: 80px;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 40px;
-            position: relative;
-        }
-
-        .header h1 {
-            font-size: 36px;
-            color: #4CAF50;
-        }
-
-        .header .notification-search {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .header .notification-search .notification {
-            font-size: 24px;
-            color: #666;
-            cursor: pointer;
-            transition: color 0.3s, transform 0.3s;
-        }
-
-        .header .notification-search .notification:hover {
-            color: #4CAF50;
-            transform: scale(1.1);
-        }
-
-        .header .notification-search .search-bar {
-            display: flex;
-            align-items: center;
-            background: #fff;
-            padding: 8px 15px;
-            border-radius: 25px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            position: relative;
-            width: 300px;
-        }
-
-        .header .notification-search .search-bar .search-icon {
-            font-size: 16px;
-            color: #666;
-            margin-right: 5px;
-        }
-
-        .header .notification-search .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 90%; /* Adjusted for icon space */
-            font-size: 16px;
-        }
-
-        .header .notification-search .search-bar .search-results {
-            position: absolute;
-            top: 50px;
-            left: 0;
-            background: #fff;
-            width: 100%;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            display: none;
-            z-index: 10;
-        }
-
-        .header .notification-search .search-bar .search-results.active {
-            display: block;
-        }
-
-        .header .notification-search .search-bar .search-results a {
-            display: block;
-            padding: 12px;
-            color: #333;
-            text-decoration: none;
-            border-bottom: 1px solid #e0e7ff;
-            font-size: 16px;
-        }
-
-        .header .notification-search .search-bar .search-results a:hover {
-            background: #e0e7ff;
-        }
-
-        .header .profile {
-            position: relative;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            cursor: pointer;
-        }
-
-        .header .profile:hover {
-            opacity: 0.8;
-        }
-
-        .header .profile img {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-
-        .header .profile span {
-            font-size: 18px;
-        }
-
-        .profile-dropdown {
-            position: absolute;
-            top: 60px;
-            right: 0;
-            background: #fff;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            display: none;
-            z-index: 10;
-        }
-
-        .profile-dropdown.active {
-            display: block;
-        }
-
-        .profile-dropdown .email {
-            padding: 15px 20px;
-            color: #666;
-            font-size: 16px;
-            border-bottom: 1px solid #e0e7ff;
-        }
-
-        .profile-dropdown a {
-            display: block;
-            padding: 15px 20px;
-            color: #333;
-            text-decoration: none;
-            font-size: 16px;
-        }
-
-        .profile-dropdown a:hover {
-            background: #e0e7ff;
-        }
-
-        .card {
-            background: rgb(187, 235, 191);
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
-        }
-
-        .card .details {
-            display: flex;
-            justify-content: space-between;
-            font-size: 18px;
-            color: #333;
-        }
-
-        .card .details h2 {
-            font-size: 28px;
-            color: rgb(55, 122, 57);
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-        }
-
-        .stat-box {
-            background: #E8F5E9;
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            transition: transform 0.5s;
-        }
-
-        .stat-box:hover {
-            transform: scale(1.02);
-        }
-
-        .stat-box h3 {
-            font-size: 20px;
-            margin-bottom: 15px;
-            color: #4CAF50;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .stat-box h3 .info-icon {
-            font-size: 16px;
-            color: #666;
-            cursor: help;
-            position: relative;
-        }
-
-        .stat-box h3 .info-icon:hover .tooltip {
-            display: block;
-        }
-
-        .stat-box h3 .tooltip {
-            position: absolute;
-            top: -40px;
-            left: -10px; /* Align left edge of tooltip with left edge of icon */
-            background: #333;
-            color: #fff;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            white-space: nowrap;
-            display: none;
-            z-index: 10;
-        }
-
-        .stat-box h3 .tooltip::after {
-            content: '';
-            position: absolute;
-            bottom: -5px;
-            left: 15px; /* Position arrow closer to the left to align with icon */
-            transform: translateX(-50%);
-            border-width: 5px;
-            border-style: solid;
-            border-color: #333 transparent transparent transparent;
-        }
-
-        .stat-box canvas {
-            max-height: 150px;
-            width: 100%; /* Ensure canvas scales with container */
-        }
-
-        .stat-box .podium {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto;
-            position: relative;
-            display: none; /* Already hidden */
-        }
-
-        .stat-box .rank-icon {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto;
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-        }
-
-        .stat-box .rank-icon i {
-            font-size: 90px;
-            color: #FFD700; /* Gold color for trophy */
-            transition: transform 0.3s;
-        }
-
-        .stat-box .rank-icon i:hover {
-            transform: scale(1.1);
-        }
-
-        .stat-box .rank-icon .rank {
-            position: absolute;
-            top: 40%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 25px;
-            color:rgb(2, 58, 4);
-            font-weight: bold;
-        }
-
-        .stat-box ul {
-            list-style: none;
-        }
-
-        .stat-box ul li {
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e7ff;
-            font-size: 15px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .stat-box ul li i {
-            color: #4CAF50;
-        }
-
-        .download-btn {
-            display: block;
-            background: #4CAF50;
-            color: #fff;
-            text-align: center;
-            padding: 15px;
-            border-radius: 15px;
-            text-decoration: none;
-            margin-top: 27px;
-            font-size: 20px;
-            font-weight: bold;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-
-        .download-btn:hover {
-            transform: translateY(-5px) scale(1.05);
-            box-shadow: 0 10px 20px rgba(76, 175, 80, 0.4);
-        }
-
-        .error-message {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        /* Mobile Responsive Design */
-        @media (max-width: 768px) {
-            .container {
-                flex-direction: column;
-            }
-
-            .sidebar {
-                width: 100%;
-                flex-direction: row;
-                justify-content: space-around;
-                position: fixed;
-                top: auto;
-                bottom: 0;
-                border-radius: 15px 15px 0 0;
-                box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
-                padding: 10px 0;
-                z-index: 100;
-            }
-
-            .sidebar img.logo {
-                display: none;
-            }
-
-            .sidebar a {
-                margin: 0 10px;
-                font-size: 18px;
-            }
-
-            .main-content {
-                padding: 20px;
-                padding-bottom: 80px;
-                margin-left: 0;
-            }
-
-            .header {
-                flex-direction: row;
-                align-items: center;
-                gap: 15px;
-                width: 100%;
-            }
-
-            .header h1 {
-                font-size: 24px;
-            }
-
-            .header .notification-search {
-                flex-direction: row;
-                align-items: center;
-                gap: 10px;
-                width: auto;
-                flex-grow: 1;
-            }
-
-            .header .notification-search .notification {
-                font-size: 20px;
-                flex-shrink: 0;
-            }
-
-            .header .notification-search .search-bar {
-                width: 100%;
-                max-width: 200px;
-                padding: 5px 10px;
-                flex-grow: 1;
-            }
-
-            .header .notification-search .search-bar input {
-                font-size: 14px;
-            }
-
-            .header .notification-search .search-bar .search-results {
-                top: 40px;
-            }
-
-            .header .profile {
-                margin-top: 0;
-                flex-shrink: 0;
-            }
-
-            .header .profile img {
-                width: 40px;
-                height: 40px;
-            }
-
-            .header .profile span {
-                font-size: 16px;
-                display: none; /* Hide the name to save space */
-            }
-
-            .profile-dropdown {
-                top: 50px;
-                width: 200px;
-                right: 0;
-            }
-
-            .card {
-                padding: 20px;
-            }
-
-            .card .details {
-                flex-direction: flex;
-                gap: 15px;
-                font-size: 16px;
-            }
-
-            .card .details h2 {
-                font-size: 24px;
-            }
-
-            .stats-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Adjusted min width for better responsiveness */
-                gap: 20px;
-            }
-
-            .stat-box {
-                padding: 15px; /* Reduced padding for smaller screens */
-            }
-
-            .stat-box h3 {
-                font-size: 16px; /* Reduced font size */
-            }
-
-            .stat-box canvas {
-                max-height: 100px; /* Reduced height */
-                width: 100%; /* Ensure canvas scales */
-            }
-
-            .stat-box .rank-icon {
-                width: 80px; /* Reduced size */
-                height: 80px;
-            }
-
-            .stat-box .rank-icon i {
-                font-size: 50px; /* Reduced size */
-            }
-
-            .stat-box .rank-icon .rank {
-                font-size: 16px; /* Reduced font size */
-            }
-
-            .stat-box ul {
-                font-size: 14px; /* Reduced font size for list */
-            }
-
-            .stat-box ul li {
-                font-size: 14px;
-                padding: 8px 0;
-                display: flex;
-                flex-wrap: wrap; /* Allow wrapping of long event text */
-                gap: 5px;
-            }
-
-            .download-btn {
-                padding: 10px;
-                font-size: 14px;
-            }
-        }
-    </style>
 </head>
 <body>
     <div class="container">
@@ -719,16 +186,17 @@ try {
                 <div class="stat-box" onclick="window.location.href='events.php'">
                     <h3>Upcoming Events</h3>
                     <ul>
-                        <?php foreach ($events as $event): ?>
-                            <li>
-                                <i class="fas fa-calendar-check"></i>
-                                <?php echo htmlspecialchars($event['title']); ?> - 
-                                <?php echo date('M d', strtotime($event['event_date'])); ?> at 
-                                <?php echo htmlspecialchars($event['location']); ?>
-                            </li>
-                        <?php endforeach; ?>
                         <?php if (empty($events)): ?>
-                            <li>No upcoming events.</li>
+                            <li>No upcoming events in your region <?php echo htmlspecialchars($user['region_name'] ?? 'N/A'); ?></li>
+                        <?php else: ?>
+                            <?php foreach ($events as $event): ?>
+                                <li>
+                                    <i class="fas fa-calendar-check"></i>
+                                    <?php echo htmlspecialchars($event['title']); ?> - 
+                                    <?php echo date('M d', strtotime($event['event_date'])); ?> at 
+                                    <?php echo htmlspecialchars($event['location']); ?>
+                                </li>
+                            <?php endforeach; ?>
                         <?php endif; ?>
                     </ul>
                 </div>

@@ -20,8 +20,19 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
+// Initialize messages
 $submission_error = '';
 $submission_success = '';
+
+// Check for messages in session (from PRG redirect)
+if (isset($_SESSION['submission_error'])) {
+    $submission_error = $_SESSION['submission_error'];
+    unset($_SESSION['submission_error']);
+}
+if (isset($_SESSION['submission_success'])) {
+    $submission_success = $_SESSION['submission_success'];
+    unset($_SESSION['submission_success']);
+}
 
 // Function to fetch planting site for a barangay
 function getPlantingSite($pdo, $barangay_id) {
@@ -95,246 +106,283 @@ try {
     $planting_site = getPlantingSite($pdo, $barangay_id);
 
     if (!$planting_site) {
-        $submission_error = 'No planting site designated for your barangay. Please contact an admin.';
-    } else {
-        // Generate CSRF token
-        if (empty($_SESSION['csrf_token'])) {
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        $_SESSION['submission_error'] = 'No planting site designated for your barangay. Please contact an admin.';
+        header('Location: submit.php');
+        exit;
+    }
+
+    // Generate CSRF token
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    $csrf_token = $_SESSION['csrf_token'];
+
+    // Handle tree planting submission (POST request)
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_planting'])) {
+        // Validate CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            $_SESSION['submission_error'] = 'Invalid CSRF token. Please try again.';
+            header('Location: submit.php');
+            exit;
         }
-        $csrf_token = $_SESSION['csrf_token'];
 
-        // Handle tree planting submission
-        $submission_error = $submission_error ?? '';
-        $submission_success = '';
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_planting'])) {
-            // Validate CSRF token
-            if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-                $submission_error = 'Invalid CSRF token. Please try again.';
+        $trees_planted = filter_input(INPUT_POST, 'trees_planted', FILTER_VALIDATE_INT);
+        $submission_notes = filter_input(INPUT_POST, 'submission_notes', FILTER_SANITIZE_SPECIAL_CHARS);
+
+        // Validate inputs
+        if ($trees_planted === false || $trees_planted <= 0) {
+            $_SESSION['submission_error'] = 'Please enter a valid number of trees planted (must be a positive integer).';
+            header('Location: submit.php');
+            exit;
+        } elseif ($trees_planted > 100) {
+            $_SESSION['submission_error'] = 'You cannot submit more than 100 trees at once. Please contact support for large submissions.';
+            header('Location: submit.php');
+            exit;
+        } elseif (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
+            $_SESSION['submission_error'] = 'Please upload a photo of the tree planting. Error code: ' . ($_FILES['photo']['error'] ?? 'N/A');
+            error_log("File upload error for user $user_id: " . ($_FILES['photo']['error'] ?? 'No file uploaded'));
+            header('Location: submit.php');
+            exit;
+        }
+
+        // Validate photo
+        $file_tmp = $_FILES['photo']['tmp_name'];
+        $file_name = $_FILES['photo']['name'];
+        $file_size = $_FILES['photo']['size'];
+        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+        $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
+
+        if (!in_array($file_ext, $allowed_exts)) {
+            $_SESSION['submission_error'] = 'Only JPG, JPEG, PNG, GIF, WEBP, BMP, HEIC, and HEIF files are allowed for tree planting photos.';
+            header('Location: submit.php');
+            exit;
+        } elseif ($file_size > 10 * 1024 * 1024) { // Reduced limit to 10MB
+            $_SESSION['submission_error'] = 'Photo size must be less than 10MB.';
+            header('Location: submit.php');
+            exit;
+        }
+
+        // Check photo resolution
+        $image_info = @getimagesize($file_tmp);
+        if ($image_info === false) {
+            $_SESSION['submission_error'] = 'Invalid image file. Please upload a valid image.';
+            error_log("Invalid image file for user $user_id: Unable to get image size for $file_name");
+            header('Location: submit.php');
+            exit;
+        }
+
+        list($width, $height) = $image_info;
+        if ($width < 800 || $height < 600) {
+            $_SESSION['submission_error'] = 'Photo resolution must be at least 800x600 pixels for clear validation.';
+            header('Location: submit.php');
+            exit;
+        }
+
+        // Read photo data with stricter validation
+        $photo_data = file_get_contents($file_tmp);
+        if ($photo_data === false || empty($photo_data)) {
+            $_SESSION['submission_error'] = 'Failed to read photo data. Please try a different image.';
+            error_log("Failed to read photo data for user $user_id: $file_name | Size: $file_size bytes");
+            header('Location: submit.php');
+            exit;
+        }
+
+        // Generate photo hash
+        $photo_hash = hash('sha256', $photo_data);
+
+        // Check for duplicate submissions
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM submissions 
+            WHERE user_id = :user_id 
+            AND photo_hash = :photo_hash
+        ");
+        $stmt->execute([
+            'user_id' => $user_id,
+            'photo_hash' => $photo_hash
+        ]);
+        if ($stmt->fetchColumn() > 0) {
+            $_SESSION['submission_error'] = 'This photo has already been submitted. Please upload a new photo.';
+            header('Location: submit.php');
+            exit;
+        }
+
+        // Check proximity to recent submissions (for logging, not flagging)
+        $stmt = $pdo->prepare("
+            SELECT latitude, longitude 
+            FROM submissions 
+            WHERE user_id = :user_id 
+            AND submitted_at >= NOW() - INTERVAL 24 HOUR
+            AND latitude IS NOT NULL
+            AND longitude IS NOT NULL
+        ");
+        $stmt->execute(['user_id' => $user_id]);
+        $recent_locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $proximity_note = '';
+        $exif = @exif_read_data($file_tmp);
+        $latitude = null;
+        $longitude = null;
+        $is_flagged = 0;
+
+        // Extract GPS from photo EXIF data
+        if ($exif && isset($exif['GPSLatitude']) && isset($exif['GPSLongitude'])) {
+            $latitude = exif_to_decimal($exif['GPSLatitude'], $exif['GPSLatitudeRef']);
+            $longitude = exif_to_decimal($exif['GPSLongitude'], $exif['GPSLongitudeRef']);
+
+            // Validate against planting site using EXIF GPS
+            $distance_to_site = haversine_distance($latitude, $longitude, $planting_site['latitude'], $planting_site['longitude']);
+            if ($distance_to_site > 0.2) { // 200 meters
+                $_SESSION['submission_error'] = 'The photo location is too far from the designated planting site (must be within 200 meters).';
+                // Log suspicious activity
+                $stmt = $pdo->prepare("
+                    INSERT INTO activities (user_id, description, activity_type)
+                    VALUES (:user_id, :description, 'suspicious')
+                ");
+                $stmt->execute([
+                    'user_id' => $user_id,
+                    'description' => "Photo location too far from planting site: $distance_to_site km."
+                ]);
+                header('Location: submit.php');
+                exit;
             } else {
-                $trees_planted = filter_input(INPUT_POST, 'trees_planted', FILTER_VALIDATE_INT);
-                $submission_notes = filter_input(INPUT_POST, 'submission_notes', FILTER_SANITIZE_SPECIAL_CHARS);
-
-                // Validate inputs
-                if ($trees_planted === false || $trees_planted <= 0) {
-                    $submission_error = 'Please enter a valid number of trees planted (must be a positive integer).';
-                } elseif ($trees_planted > 100) {
-                    $submission_error = 'You cannot submit more than 100 trees at once. Please contact support for large submissions.';
-                } elseif (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
-                    $submission_error = 'Please upload a photo of the tree planting. Error code: ' . ($_FILES['photo']['error'] ?? 'N/A');
-                    error_log("File upload error for user $user_id: " . ($_FILES['photo']['error'] ?? 'No file uploaded'));
-                } else {
-                    // Validate photo
-                    $file_tmp = $_FILES['photo']['tmp_name'];
-                    $file_name = $_FILES['photo']['name'];
-                    $file_size = $_FILES['photo']['size'];
-                    $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                    $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
-
-                    if (!in_array($file_ext, $allowed_exts)) {
-                        $submission_error = 'Only JPG, JPEG, PNG, GIF, WEBP, BMP, HEIC, and HEIF files are allowed for tree planting photos.';
-                    } elseif ($file_size > 10 * 1024 * 1024) { // Reduced limit to 10MB
-                        $submission_error = 'Photo size must be less than 10MB.';
-                    } else {
-                        // Check photo resolution
-                        $image_info = @getimagesize($file_tmp);
-                        if ($image_info === false) {
-                            $submission_error = 'Invalid image file. Please upload a valid image.';
-                            error_log("Invalid image file for user $user_id: Unable to get image size for $file_name");
-                        } else {
-                            list($width, $height) = $image_info;
-                            if ($width < 800 || $height < 600) {
-                                $submission_error = 'Photo resolution must be at least 800x600 pixels for clear validation.';
-                            } else {
-                                // Read photo data with stricter validation
-                                $photo_data = file_get_contents($file_tmp);
-                                if ($photo_data === false || empty($photo_data)) {
-                                    $submission_error = 'Failed to read photo data. Please try a different image.';
-                                    error_log("Failed to read photo data for user $user_id: $file_name | Size: $file_size bytes");
-                                } else {
-                                    // Generate photo hash
-                                    $photo_hash = hash('sha256', $photo_data);
-
-                                    // Check for duplicate submissions
-                                    $stmt = $pdo->prepare("
-                                        SELECT COUNT(*) 
-                                        FROM submissions 
-                                        WHERE user_id = :user_id 
-                                        AND photo_hash = :photo_hash
-                                    ");
-                                    $stmt->execute([
-                                        'user_id' => $user_id,
-                                        'photo_hash' => $photo_hash
-                                    ]);
-                                    if ($stmt->fetchColumn() > 0) {
-                                        $submission_error = 'This photo has already been submitted. Please upload a new photo.';
-                                    } else {
-                                        // Check proximity to recent submissions (for logging, not flagging)
-                                        $stmt = $pdo->prepare("
-                                            SELECT latitude, longitude 
-                                            FROM submissions 
-                                            WHERE user_id = :user_id 
-                                            AND submitted_at >= NOW() - INTERVAL 24 HOUR
-                                            AND latitude IS NOT NULL
-                                            AND longitude IS NOT NULL
-                                        ");
-                                        $stmt->execute(['user_id' => $user_id]);
-                                        $recent_locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                                        $proximity_note = '';
-                                        $exif = @exif_read_data($file_tmp);
-                                        $latitude = null;
-                                        $longitude = null;
-                                        $is_flagged = 0;
-
-                                        // Extract GPS from photo EXIF data
-                                        if ($exif && isset($exif['GPSLatitude']) && isset($exif['GPSLongitude'])) {
-                                            $latitude = exif_to_decimal($exif['GPSLatitude'], $exif['GPSLatitudeRef']);
-                                            $longitude = exif_to_decimal($exif['GPSLongitude'], $exif['GPSLongitudeRef']);
-
-                                            // Validate against planting site using EXIF GPS
-                                            $distance_to_site = haversine_distance($latitude, $longitude, $planting_site['latitude'], $planting_site['longitude']);
-                                            if ($distance_to_site > 0.2) { // 200 meters
-                                                $submission_error = 'The photo location is too far from the designated planting site (must be within 200 meters).';
-                                                // Log suspicious activity
-                                                $stmt = $pdo->prepare("
-                                                    INSERT INTO activities (user_id, description, activity_type)
-                                                    VALUES (:user_id, :description, 'suspicious')
-                                                ");
-                                                $stmt->execute([
-                                                    'user_id' => $user_id,
-                                                    'description' => "Photo location too far from planting site: $distance_to_site km."
-                                                ]);
-                                            } else {
-                                                // Check proximity to recent submissions
-                                                foreach ($recent_locations as $loc) {
-                                                    $distance = haversine_distance($latitude, $longitude, $loc['latitude'], $loc['longitude']);
-                                                    if ($distance < 0.1) { // 100 meters
-                                                        $proximity_note = "Note: This submission is within 100 meters of a previous submission within the last 24 hours.";
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            // Flag submission for review if EXIF GPS data is missing
-                                            $is_flagged = 1;
-                                            $proximity_note = "Note: Photo lacks EXIF GPS data. Flagged for manual review.";
-                                            error_log("Photo for user $user_id lacks EXIF GPS data: $file_name");
-                                        }
-
-                                        // Check photo timestamp via EXIF
-                                        $photo_timestamp = null;
-                                        if ($exif && isset($exif['DateTimeOriginal'])) {
-                                            $photo_timestamp = date('Y-m-d H:i:s', strtotime($exif['DateTimeOriginal']));
-                                            $time_diff = abs(strtotime('now') - strtotime($photo_timestamp));
-                                            if ($time_diff > 28800) { // 8 hours
-                                                $submission_error = 'Photo appears to be older than 8 hours. Please upload a recent photo.';
-                                            } elseif ($time_diff > 25200) { // 7 hours
-                                                $proximity_note .= " Note: Photo is over 7 hours old. Flagged for review.";
-                                                $is_flagged = 1;
-                                            }
-                                        } else {
-                                            $proximity_note .= " Note: Photo lacks EXIF timestamp. Flagged for review.";
-                                            $is_flagged = 1;
-                                        }
-
-                                        if (!$submission_error) {
-                                            // Get IP address and device info with fallbacks
-                                            $ip_address = $_SERVER['REMOTE_ADDR'] ?: 'unknown';
-                                            $device_info = $_SERVER['HTTP_USER_AGENT'] ?: 'unknown';
-
-                                            // Begin transaction
-                                            $pdo->beginTransaction();
-                                            try {
-                                                // Insert submission into database
-                                                $stmt = $pdo->prepare("
-                                                    INSERT INTO submissions (
-                                                        user_id, barangay_id, trees_planted, photo_data, photo_timestamp,
-                                                        photo_hash, latitude, longitude, location_accuracy,
-                                                        device_location_timestamp, ip_address, device_info, submission_notes,
-                                                        planting_site_id, status, submitted_at, flagged
-                                                    ) VALUES (
-                                                        :user_id, :barangay_id, :trees_planted, :photo_data, NOW(),
-                                                        :photo_hash, :latitude, :longitude, NULL,
-                                                        NOW(), :ip_address, :device_info, :submission_notes,
-                                                        :planting_site_id, 'pending', NOW(), :flagged
-                                                    )
-                                                ");
-                                                $stmt->execute([
-                                                    'user_id' => $user_id,
-                                                    'barangay_id' => $barangay_id,
-                                                    'trees_planted' => $trees_planted,
-                                                    'photo_data' => $photo_data,
-                                                    'photo_hash' => $photo_hash,
-                                                    'latitude' => $latitude,
-                                                    'longitude' => $longitude,
-                                                    'ip_address' => $ip_address,
-                                                    'device_info' => $device_info,
-                                                    'submission_notes' => $submission_notes ?: null,
-                                                    'planting_site_id' => $planting_site['planting_site_id'],
-                                                    'flagged' => $is_flagged
-                                                ]);
-
-                                                // Update user's trees_planted and co2_offset (pending approval)
-                                                $new_trees_planted = $user['trees_planted'] + $trees_planted;
-                                                $co2_per_tree = 22;
-                                                $new_co2_offset = $user['co2_offset'] + ($trees_planted * $co2_per_tree);
-
-                                                $stmt = $pdo->prepare("
-                                                    UPDATE users 
-                                                    SET trees_planted = :trees_planted, co2_offset = :co2_offset
-                                                    WHERE user_id = :user_id
-                                                ");
-                                                $stmt->execute([
-                                                    'trees_planted' => $new_trees_planted,
-                                                    'co2_offset' => $new_co2_offset,
-                                                    'user_id' => $user_id
-                                                ]);
-
-                                                // Log the activity with detailed info
-                                                $description = "Submitted $trees_planted trees in $barangay_name. $proximity_note";
-                                                $stmt = $pdo->prepare("
-                                                    INSERT INTO activities (
-                                                        user_id, description, activity_type, trees_planted, location, status, created_at
-                                                    ) VALUES (
-                                                        :user_id, :description, 'submission', :trees_planted, :location, 'pending', NOW()
-                                                    )
-                                                ");
-                                                $stmt->execute([
-                                                    'user_id' => $user_id,
-                                                    'description' => $description,
-                                                    'trees_planted' => $trees_planted,
-                                                    'location' => $barangay_name
-                                                ]);
-
-                                                // Commit transaction
-                                                $pdo->commit();
-                                                $submission_success = 'Tree planting submitted successfully! It is now pending validation.';
-                                            } catch (Exception $e) {
-                                                $pdo->rollBack();
-                                                // More specific error message based on the exception
-                                                $error_message = $e->getMessage();
-                                                if (stripos($error_message, 'max_allowed_packet') !== false) {
-                                                    $submission_error = 'Photo size is too large for the server to handle. Please upload a smaller image (under 10MB).';
-                                                } elseif (stripos($error_message, 'photo_data') !== false) {
-                                                    $submission_error = 'Invalid photo data. Please try a different image.';
-                                                } else {
-                                                    $submission_error = 'Failed to submit tree planting. Please try again or save locally if you are offline.';
-                                                }
-                                                error_log("Submission error for user $user_id: " . $error_message . " | File: $file_name | Size: $file_size bytes");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                // Check proximity to recent submissions
+                foreach ($recent_locations as $loc) {
+                    $distance = haversine_distance($latitude, $longitude, $loc['latitude'], $loc['longitude']);
+                    if ($distance < 0.1) { // 100 meters
+                        $proximity_note = "Note: This submission is within 100 meters of a previous submission within the last 24 hours.";
+                        break;
                     }
                 }
             }
+        } else {
+            // Flag submission for review if EXIF GPS data is missing
+            $is_flagged = 1;
+            $proximity_note = "Note: Photo lacks EXIF GPS data. Flagged for manual review.";
+            error_log("Photo for user $user_id lacks EXIF GPS data: $file_name");
+        }
+
+        // Check photo timestamp via EXIF
+        $photo_timestamp = null;
+        if ($exif && isset($exif['DateTimeOriginal'])) {
+            $photo_timestamp = date('Y-m-d H:i:s', strtotime($exif['DateTimeOriginal']));
+            $time_diff = abs(strtotime('now') - strtotime($photo_timestamp));
+            if ($time_diff > 28800) { // 8 hours
+                $_SESSION['submission_error'] = 'Photo appears to be older than 8 hours. Please upload a recent photo.';
+                header('Location: submit.php');
+                exit;
+            } elseif ($time_diff > 25200) { // 7 hours
+                $proximity_note .= " Note: Photo is over 7 hours old. Flagged for review.";
+                $is_flagged = 1;
+            }
+        } else {
+            $proximity_note .= " Note: Photo lacks EXIF timestamp. Flagged for review.";
+            $is_flagged = 1;
+        }
+
+        // Get IP address and device info with fallbacks
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?: 'unknown';
+        $device_info = $_SERVER['HTTP_USER_AGENT'] ?: 'unknown';
+
+        // Begin transaction
+        $pdo->beginTransaction();
+        try {
+            // Insert submission into database
+            $stmt = $pdo->prepare("
+                INSERT INTO submissions (
+                    user_id, barangay_id, trees_planted, photo_data, photo_timestamp,
+                    photo_hash, latitude, longitude, location_accuracy,
+                    device_location_timestamp, ip_address, device_info, submission_notes,
+                    planting_site_id, status, submitted_at, flagged
+                ) VALUES (
+                    :user_id, :barangay_id, :trees_planted, :photo_data, NOW(),
+                    :photo_hash, :latitude, :longitude, NULL,
+                    NOW(), :ip_address, :device_info, :submission_notes,
+                    :planting_site_id, 'pending', NOW(), :flagged
+                )
+            ");
+            $stmt->execute([
+                'user_id' => $user_id,
+                'barangay_id' => $barangay_id,
+                'trees_planted' => $trees_planted,
+                'photo_data' => $photo_data,
+                'photo_hash' => $photo_hash,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'ip_address' => $ip_address,
+                'device_info' => $device_info,
+                'submission_notes' => $submission_notes ?: null,
+                'planting_site_id' => $planting_site['planting_site_id'],
+                'flagged' => $is_flagged
+            ]);
+
+            // Log the activity with detailed info
+            $description = "Submitted $trees_planted trees in $barangay_name. $proximity_note";
+            $stmt = $pdo->prepare("
+                INSERT INTO activities (
+                    user_id, description, activity_type, trees_planted, location, status, created_at
+                ) VALUES (
+                    :user_id, :description, 'submission', :trees_planted, :location, 'pending', NOW()
+                )
+            ");
+            $stmt->execute([
+                'user_id' => $user_id,
+                'description' => $description,
+                'trees_planted' => $trees_planted,
+                'location' => $barangay_name
+            ]);
+
+            // Commit transaction
+            $pdo->commit();
+            $_SESSION['submission_success'] = 'Tree planting submitted successfully! It is now pending validation.';
+            header('Location: submit.php');
+            exit;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error_message = $e->getMessage();
+            $error_code = $e->getCode();
+            $error_file = $e->getFile();
+            $error_line = $e->getLine();
+            $error_trace = $e->getTraceAsString();
+
+            // Detailed logging for debugging
+            $debug_log = sprintf(
+                "Submission error for user %s: [%s] %s | File: %s (Line %d) | Trace: %s | File: %s | Size: %d bytes | Trees Planted: %d | Notes: %s",
+                $user_id, $error_code, $error_message, $error_file, $error_line, $error_trace, $file_name, $file_size, $trees_planted, $submission_notes
+            );
+            error_log($debug_log);
+
+            // Store detailed error in session for display after redirect
+            $_SESSION['debug_error'] = sprintf(
+                "Error: [%s] %s\nFile: %s (Line %d)\nTrace: %s",
+                $error_code, $error_message, $error_file, $error_line, $error_trace
+            );
+
+            // Set user-friendly error message
+            if (stripos($error_message, 'max_allowed_packet') !== false) {
+                $_SESSION['submission_error'] = 'Photo size is too large for the server to handle. Please upload a smaller image (under 10MB).';
+            } elseif (stripos($error_message, 'photo_data') !== false) {
+                $_SESSION['submission_error'] = 'Invalid photo data. Please try a different image.';
+            } elseif (stripos($error_message, 'photo_hash') !== false) {
+                $_SESSION['submission_error'] = 'This photo has already been submitted. Please upload a new photo.';
+            } else {
+                $_SESSION['submission_error'] = 'Failed to submit tree planting. Please try again or save locally if you are offline.';
+            }
+
+            header('Location: submit.php');
+            exit;
         }
     }
 
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
     error_log("Database error in submit.php: " . $e->getMessage());
+}
+
+// Check for debug error message to display
+$debug_error = isset($_SESSION['debug_error']) ? $_SESSION['debug_error'] : '';
+if ($debug_error) {
+    echo "<script>alert('" . addslashes($debug_error) . "');</script>";
+    unset($_SESSION['debug_error']);
 }
 
 // Helper functions

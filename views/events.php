@@ -12,44 +12,11 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
-// Pagination settings
-$events_per_page = 10;
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'upcoming';
-$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
-$offset = ($page - 1) * $events_per_page;
-
-// Filters
-$filter_date = isset($_GET['filter_date']) ? $_GET['filter_date'] : '';
-$filter_province = isset($_GET['filter_province']) ? $_GET['filter_province'] : ''; // Changed from filter_barangay to filter_province
-
-// Initialize variables
-$upcoming_events = [];
-$my_events = [];
-$upcoming_total = 0;
-$my_events_total = 0;
-$provinces = []; // Changed to provinces for filter
-$join_message = '';
-$join_message_type = '';
-
-// Check for session messages
-if (isset($_SESSION['join_message'])) {
-    $join_message = $_SESSION['join_message'];
-    $join_message_type = $_SESSION['join_message_type'] ?? 'error';
-    unset($_SESSION['join_message']);
-    unset($_SESSION['join_message_type']);
-}
-
-// Function to generate QR code data
-function generateQRCodeData($user_id, $event_id)
-{
-    return hash('sha256', $user_id . $event_id . time());
-}
-
 // Fetch user data including barangay and profile picture
 try {
     $stmt = $pdo->prepare("
         SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.role, u.barangay_id, u.first_name,
-               b.name as barangay_name, b.province as province_name, b.region as region_name
+               b.name as barangay_name, b.city as city_name, b.province as province_name, b.region as region_name
         FROM users u 
         LEFT JOIN barangays b ON u.barangay_id = b.barangay_id
         WHERE u.user_id = :user_id
@@ -62,6 +29,9 @@ try {
         header('Location: login.php');
         exit;
     }
+
+    // Now that $user is defined, we can safely use it
+    $filter_region = $user['region_name']; // Fixed to user's region
 
     // Fetch profile picture (custom or default)
     if ($user['profile_picture']) {
@@ -98,261 +68,327 @@ try {
     $stmt->execute();
     $logo_data = $stmt->fetchColumn();
     $logo_base64 = $logo_data ? 'data:image/png;base64,' . base64_encode($logo_data) : 'logo.png';
+} catch (PDOException $e) {
+    $error_message = "Error: " . $e->getMessage();
+    // Since $user might not be defined, we should exit early if there's an error here
+    $user = null;
+    $filter_region = ''; // Fallback value
+}
 
-    // Fetch provinces for filter (only provinces within Region X for all users)
-    $stmt = $pdo->prepare("SELECT DISTINCT province FROM barangays WHERE region = :region AND province IS NOT NULL ORDER BY province");
-    $stmt->execute(['region' => $user['region_name']]);
-    $provinces = $stmt->fetchAll(PDO::FETCH_COLUMN);
+// Pagination settings
+$events_per_page = 10;
+$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'upcoming';
+$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) * $events_per_page;
 
-    // Handle Join Event
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_event'])) {
-        $event_id = (int)$_POST['event_id'];
+// Filters
+$filter_date = isset($_GET['filter_date']) ? $_GET['filter_date'] : '';
+$filter_province = isset($_GET['filter_province']) ? $_GET['filter_province'] : '';
+$filter_city = isset($_GET['filter_city']) ? $_GET['filter_city'] : '';
+$filter_barangay = isset($_GET['filter_barangay']) ? $_GET['filter_barangay'] : '';
 
-        // Check if the event has available spots
-        $stmt = $pdo->prepare("SELECT capacity, (SELECT COUNT(*) FROM event_participants WHERE event_id = :event_id) as participant_count FROM events WHERE event_id = :event_id");
-        $stmt->execute(['event_id' => $event_id]);
-        $event_capacity = $stmt->fetch(PDO::FETCH_ASSOC);
+// Initialize variables
+$upcoming_events = [];
+$my_events = [];
+$upcoming_total = 0;
+$my_events_total = 0;
+$provinces = [];
+$cities = [];
+$barangays = [];
+$join_message = '';
+$join_message_type = '';
 
-        if ($event_capacity && $event_capacity['capacity'] && $event_capacity['participant_count'] >= $event_capacity['capacity']) {
-            if (isset($_POST['ajax'])) {
-                echo json_encode(['success' => false, 'message' => 'This event has reached its capacity.']);
-                exit;
-            }
-            $_SESSION['join_message'] = 'This event has reached its capacity.';
-            $_SESSION['join_message_type'] = 'error';
-        } else {
-            // Check if the user has already joined the event
-            $stmt = $pdo->prepare("
-                SELECT COUNT(*) 
-                FROM event_participants 
-                WHERE event_id = :event_id AND user_id = :user_id
-            ");
-            $stmt->execute(['event_id' => $event_id, 'user_id' => $user_id]);
-            $already_joined = $stmt->fetchColumn();
+// Check for session messages
+if (isset($_SESSION['join_message'])) {
+    $join_message = $_SESSION['join_message'];
+    $join_message_type = $_SESSION['join_message_type'] ?? 'error';
+    unset($_SESSION['join_message']);
+    unset($_SESSION['join_message_type']);
+}
 
-            if ($already_joined) {
+// Function to generate QR code data
+function generateQRCodeData($user_id, $event_id)
+{
+    return hash('sha256', $user_id . $event_id . time());
+}
+
+try {
+    // Fetch cascading dropdown options based on user's region
+    if ($user) { // Ensure $user exists before proceeding
+        $stmt = $pdo->prepare("SELECT DISTINCT province FROM barangays WHERE region = :region AND province IS NOT NULL ORDER BY province");
+        $stmt->execute(['region' => $user['region_name']]);
+        $provinces = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        if ($filter_province) {
+            $stmt = $pdo->prepare("SELECT DISTINCT city FROM barangays WHERE region = :region AND province = :province AND city IS NOT NULL ORDER BY city");
+            $stmt->execute(['region' => $user['region_name'], 'province' => $filter_province]);
+            $cities = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        }
+
+        if ($filter_city) {
+            $stmt = $pdo->prepare("SELECT DISTINCT name FROM barangays WHERE region = :region AND province = :province AND city = :city AND name IS NOT NULL ORDER BY name");
+            $stmt->execute(['region' => $user['region_name'], 'province' => $filter_province, 'city' => $filter_city]);
+            $barangays = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        }
+
+        // Handle Join Event
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_event'])) {
+            $event_id = (int)$_POST['event_id'];
+
+            // Check if the event has available spots
+            $stmt = $pdo->prepare("SELECT capacity, (SELECT COUNT(*) FROM event_participants WHERE event_id = :event_id) as participant_count FROM events WHERE event_id = :event_id");
+            $stmt->execute(['event_id' => $event_id]);
+            $event_capacity = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($event_capacity && $event_capacity['capacity'] && $event_capacity['participant_count'] >= $event_capacity['capacity']) {
                 if (isset($_POST['ajax'])) {
-                    echo json_encode(['success' => false, 'message' => 'You have already joined this event.']);
+                    echo json_encode(['success' => false, 'message' => 'This event has reached its capacity.']);
                     exit;
                 }
-                $_SESSION['join_message'] = 'You have already joined this event.';
+                $_SESSION['join_message'] = 'This event has reached its capacity.';
                 $_SESSION['join_message_type'] = 'error';
             } else {
-                // Fetch event details for logging
+                // Check if the user has already joined the event
                 $stmt = $pdo->prepare("
-                    SELECT title, event_date, location 
-                    FROM events 
-                    WHERE event_id = :event_id
+                    SELECT COUNT(*) 
+                    FROM event_participants 
+                    WHERE event_id = :event_id AND user_id = :user_id
                 ");
-                $stmt->execute(['event_id' => $event_id]);
-                $event = $stmt->fetch(PDO::FETCH_ASSOC);
+                $stmt->execute(['event_id' => $event_id, 'user_id' => $user_id]);
+                $already_joined = $stmt->fetchColumn();
 
-                if ($event) {
-                    // Generate QR code data
-                    $qr_code = generateQRCodeData($user_id, $event_id);
-
-                    // Add user to event participants with QR code
-                    $stmt = $pdo->prepare("
-                        INSERT INTO event_participants (event_id, user_id, qr_code, joined_at) 
-                        VALUES (:event_id, :user_id, :qr_code, NOW())
-                    ");
-                    $stmt->execute([
-                        'event_id' => $event_id,
-                        'user_id' => $user_id,
-                        'qr_code' => $qr_code
-                    ]);
-
-                    // Log activity with detailed info
-                    $stmt = $pdo->prepare("
-                        INSERT INTO activities (
-                            user_id, description, activity_type, event_title, event_date, location, created_at
-                        ) VALUES (
-                            :user_id, :description, 'event', :event_title, :event_date, :location, NOW()
-                        )
-                    ");
-                    $stmt->execute([
-                        'user_id' => $user_id,
-                        'description' => "Joined event: {$event['title']}",
-                        'event_title' => $event['title'],
-                        'event_date' => $event['event_date'],
-                        'location' => $event['location']
-                    ]);
-
-                    // For AJAX requests, return event details for the modal
+                if ($already_joined) {
                     if (isset($_POST['ajax'])) {
-                        $stmt = $pdo->prepare("
-                            SELECT e.title, e.event_date, e.location, e.capacity, 
-                                   (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
-                                   b.name as barangay_name 
-                            FROM events e 
-                            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
-                            WHERE e.event_id = :event_id
-                        ");
-                        $stmt->execute(['event_id' => $event_id]);
-                        $event = $stmt->fetch(PDO::FETCH_ASSOC);
+                        echo json_encode(['success' => false, 'message' => 'You have already joined this event.']);
+                        exit;
+                    }
+                    $_SESSION['join_message'] = 'You have already joined this event.';
+                    $_SESSION['join_message_type'] = 'error';
+                } else {
+                    // Fetch event details for logging
+                    $stmt = $pdo->prepare("
+                        SELECT title, event_date, location 
+                        FROM events 
+                        WHERE event_id = :event_id
+                    ");
+                    $stmt->execute(['event_id' => $event_id]);
+                    $event = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                        echo json_encode([
-                            'success' => true,
-                            'user' => [
-                                'username' => $user['username'],
-                                'email' => $user['email']
-                            ],
-                            'event' => $event,
+                    if ($event) {
+                        // Generate QR code data
+                        $qr_code = generateQRCodeData($user_id, $event_id);
+
+                        // Add user to event participants with QR code
+                        $stmt = $pdo->prepare("
+                            INSERT INTO event_participants (event_id, user_id, qr_code, joined_at) 
+                            VALUES (:event_id, :user_id, :qr_code, NOW())
+                        ");
+                        $stmt->execute([
+                            'event_id' => $event_id,
+                            'user_id' => $user_id,
                             'qr_code' => $qr_code
                         ]);
-                        exit;
-                    }
 
-                    // For non-AJAX requests, set success message and redirect
-                    $_SESSION['join_message'] = 'Successfully joined the event! Check your QR code in My Events.';
-                    $_SESSION['join_message_type'] = 'success';
-                } else {
-                    if (isset($_POST['ajax'])) {
-                        echo json_encode(['success' => false, 'message' => 'Event not found.']);
-                        exit;
+                        // Log activity with detailed info
+                        $stmt = $pdo->prepare("
+                            INSERT INTO activities (
+                                user_id, description, activity_type, event_title, event_date, location, created_at
+                            ) VALUES (
+                                :user_id, :description, 'event', :event_title, :event_date, :location, NOW()
+                            )
+                        ");
+                        $stmt->execute([
+                            'user_id' => $user_id,
+                            'description' => "Joined event: {$event['title']}",
+                            'event_title' => $event['title'],
+                            'event_date' => $event['event_date'],
+                            'location' => $event['location']
+                        ]);
+
+                        // For AJAX requests, return event details for the modal
+                        if (isset($_POST['ajax'])) {
+                            $stmt = $pdo->prepare("
+                                SELECT e.title, e.event_date, e.location, e.capacity, 
+                                       (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
+                                       b.name as barangay_name 
+                                FROM events e 
+                                LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
+                                WHERE e.event_id = :event_id
+                            ");
+                            $stmt->execute(['event_id' => $event_id]);
+                            $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                            echo json_encode([
+                                'success' => true,
+                                'user' => [
+                                    'username' => $user['username'],
+                                    'email' => $user['email']
+                                ],
+                                'event' => $event,
+                                'qr_code' => $qr_code
+                            ]);
+                            exit;
+                        }
+
+                        // For non-AJAX requests, set success message and redirect
+                        $_SESSION['join_message'] = 'Successfully joined the event! Check your QR code in My Events.';
+                        $_SESSION['join_message_type'] = 'success';
+                    } else {
+                        if (isset($_POST['ajax'])) {
+                            echo json_encode(['success' => false, 'message' => 'Event not found.']);
+                            exit;
+                        }
+                        $_SESSION['join_message'] = 'Event not found.';
+                        $_SESSION['join_message_type'] = 'error';
                     }
-                    $_SESSION['join_message'] = 'Event not found.';
-                    $_SESSION['join_message_type'] = 'error';
                 }
+            }
+
+            // Redirect for non-AJAX requests to prevent form resubmission
+            header('Location: events.php?tab=upcoming');
+            exit;
+        }
+
+        // Handle View QR Code Request
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['view_qr_code'])) {
+            $event_id = (int)$_POST['event_id'];
+
+            // Fetch event details and QR code for the user
+            $stmt = $pdo->prepare("
+                SELECT e.title, e.event_date, e.location, e.capacity,
+                       (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
+                       b.name as barangay_name, ep.qr_code 
+                FROM events e 
+                JOIN event_participants ep ON e.event_id = ep.event_id 
+                LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
+                WHERE e.event_id = :event_id AND ep.user_id = :user_id
+            ");
+            $stmt->execute(['event_id' => $event_id, 'user_id' => $user_id]);
+            $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($event) {
+                echo json_encode([
+                    'success' => true,
+                    'user' => [
+                        'username' => $user['username'],
+                        'email' => $user['email']
+                    ],
+                    'event' => [
+                        'title' => $event['title'],
+                        'event_date' => $event['event_date'],
+                        'location' => $event['location'],
+                        'barangay_name' => $event['barangay_name'],
+                        'capacity' => $event['capacity'],
+                        'participant_count' => $event['participant_count']
+                    ],
+                    'qr_code' => $event['qr_code']
+                ]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Event not found or you are not a participant.']);
+            }
+            exit;
+        }
+
+        // Fetch Upcoming Events with Pagination (filtered by user's region)
+        if ($active_tab === 'upcoming') {
+            $query = "
+                SELECT e.event_id, e.title, e.description, e.event_date, e.location, e.capacity,
+                       (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
+                       b.name as barangay_name 
+                FROM events e 
+                LEFT JOIN barangays b ON e.barangay_id = b.barangay_id
+                WHERE e.event_date >= CURDATE() AND b.region = :region
+            ";
+            $params = ['region' => $user['region_name']];
+
+            // Filter by selected province, city, and barangay within Region X
+            if ($filter_province) {
+                $query .= " AND b.province = :province";
+                $params['province'] = $filter_province;
+            }
+            if ($filter_city) {
+                $query .= " AND b.city = :city";
+                $params['city'] = $filter_city;
+            }
+            if ($filter_barangay) {
+                $query .= " AND b.name = :barangay";
+                $params['barangay'] = $filter_barangay;
+            }
+
+            // Apply date filter
+            if ($filter_date) {
+                $query .= " AND e.event_date = :filter_date";
+                $params['filter_date'] = $filter_date;
+            }
+
+            // Count total for pagination
+            $stmt = $pdo->prepare($query);
+            $stmt->execute($params);
+            $upcoming_total = $stmt->rowCount();
+            $upcoming_pages = ceil($upcoming_total / $events_per_page);
+
+            // Fetch events with limit and offset
+            $query .= " ORDER BY e.event_date ASC LIMIT :limit OFFSET :offset";
+            $stmt = $pdo->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue(":$key", $value);
+            }
+            $stmt->bindValue(':limit', $events_per_page, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $upcoming_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Check which events the user has joined
+            $joined_events = [];
+            if (!empty($upcoming_events)) {
+                $event_ids = array_column($upcoming_events, 'event_id');
+                $placeholders = implode(',', array_fill(0, count($event_ids), '?'));
+                $stmt = $pdo->prepare("
+                    SELECT event_id 
+                    FROM event_participants 
+                    WHERE event_id IN ($placeholders) AND user_id = ?
+                ");
+                $params = array_merge($event_ids, [$user_id]);
+                $stmt->execute($params);
+                $joined_events = array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'event_id');
             }
         }
 
-        // Redirect for non-AJAX requests to prevent form resubmission
-        header('Location: events.php?tab=upcoming');
-        exit;
-    }
+        // Fetch My Events with Pagination
+        if ($active_tab === 'my_events') {
+            $query = "
+                SELECT e.event_id, e.title, e.description, e.event_date, e.location, e.capacity,
+                       (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
+                       b.name as barangay_name, ep.joined_at, ep.qr_code, ep.confirmed_at 
+                FROM events e 
+                JOIN event_participants ep ON e.event_id = ep.event_id 
+                LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
+                WHERE ep.user_id = :user_id
+            ";
+            $params = ['user_id' => $user_id];
 
-    // Handle View QR Code Request
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['view_qr_code'])) {
-        $event_id = (int)$_POST['event_id'];
+            if ($filter_date) {
+                $query .= " AND e.event_date = :filter_date";
+                $params['filter_date'] = $filter_date;
+            }
 
-        // Fetch event details and QR code for the user
-        $stmt = $pdo->prepare("
-            SELECT e.title, e.event_date, e.location, e.capacity,
-                   (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
-                   b.name as barangay_name, ep.qr_code 
-            FROM events e 
-            JOIN event_participants ep ON e.event_id = ep.event_id 
-            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
-            WHERE e.event_id = :event_id AND ep.user_id = :user_id
-        ");
-        $stmt->execute(['event_id' => $event_id, 'user_id' => $user_id]);
-        $event = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($event) {
-            echo json_encode([
-                'success' => true,
-                'user' => [
-                    'username' => $user['username'],
-                    'email' => $user['email']
-                ],
-                'event' => [
-                    'title' => $event['title'],
-                    'event_date' => $event['event_date'],
-                    'location' => $event['location'],
-                    'barangay_name' => $event['barangay_name'],
-                    'capacity' => $event['capacity'],
-                    'participant_count' => $event['participant_count']
-                ],
-                'qr_code' => $event['qr_code']
-            ]);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Event not found or you are not a participant.']);
-        }
-        exit;
-    }
-
-    // Fetch Upcoming Events with Pagination (filtered by user's province)
-    if ($active_tab === 'upcoming') {
-        $query = "
-            SELECT e.event_id, e.title, e.description, e.event_date, e.location, e.capacity,
-                   (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
-                   b.name as barangay_name 
-            FROM events e 
-            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id
-            WHERE e.event_date >= CURDATE()
-        ";
-        $params = [];
-
-        // Filter by selected province within Region X
-        if ($filter_province) {
-            $query .= " AND b.province = :province";
-            $params['province'] = $filter_province;
-        }
-
-        // Apply date filter
-        if ($filter_date) {
-            $query .= " AND e.event_date = :filter_date";
-            $params['filter_date'] = $filter_date;
-        }
-
-        // Count total for pagination
-        $stmt = $pdo->prepare($query);
-        $stmt->execute($params);
-        $upcoming_total = $stmt->rowCount();
-        $upcoming_pages = ceil($upcoming_total / $events_per_page);
-
-        // Fetch events with limit and offset
-        $query .= " ORDER BY e.event_date ASC LIMIT :limit OFFSET :offset";
-        $stmt = $pdo->prepare($query);
-        foreach ($params as $key => $value) {
-            $stmt->bindValue(":$key", $value);
-        }
-        $stmt->bindValue(':limit', $events_per_page, PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-        $stmt->execute();
-        $upcoming_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Check which events the user has joined
-        $joined_events = [];
-        if (!empty($upcoming_events)) {
-            $event_ids = array_column($upcoming_events, 'event_id');
-            $placeholders = implode(',', array_fill(0, count($event_ids), '?'));
-            $stmt = $pdo->prepare("
-                SELECT event_id 
-                FROM event_participants 
-                WHERE event_id IN ($placeholders) AND user_id = ?
-            ");
-            $params = array_merge($event_ids, [$user_id]);
+            // Count total for pagination
+            $stmt = $pdo->prepare($query);
             $stmt->execute($params);
-            $joined_events = array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'event_id');
+            $my_events_total = $stmt->rowCount();
+            $my_events_pages = ceil($my_events_total / $events_per_page);
+
+            // Fetch events with limit and offset
+            $query .= " ORDER BY e.event_date DESC LIMIT :limit OFFSET :offset";
+            $stmt = $pdo->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue(":$key", $value);
+            }
+            $stmt->bindValue(':limit', $events_per_page, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $my_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
-    }
-
-    // Fetch My Events with Pagination
-    if ($active_tab === 'my_events') {
-        $query = "
-            SELECT e.event_id, e.title, e.description, e.event_date, e.location, e.capacity,
-                   (SELECT COUNT(*) FROM event_participants WHERE event_id = e.event_id) as participant_count,
-                   b.name as barangay_name, ep.joined_at, ep.qr_code, ep.confirmed_at 
-            FROM events e 
-            JOIN event_participants ep ON e.event_id = ep.event_id 
-            LEFT JOIN barangays b ON e.barangay_id = b.barangay_id 
-            WHERE ep.user_id = :user_id
-        ";
-        $params = ['user_id' => $user_id];
-
-        if ($filter_date) {
-            $query .= " AND e.event_date = :filter_date";
-            $params['filter_date'] = $filter_date;
-        }
-
-        // Count total for pagination
-        $stmt = $pdo->prepare($query);
-        $stmt->execute($params);
-        $my_events_total = $stmt->rowCount();
-        $my_events_pages = ceil($my_events_total / $events_per_page);
-
-        // Fetch events with limit and offset
-        $query .= " ORDER BY e.event_date DESC LIMIT :limit OFFSET :offset";
-        $stmt = $pdo->prepare($query);
-        foreach ($params as $key => $value) {
-            $stmt->bindValue(":$key", $value);
-        }
-        $stmt->bindValue(':limit', $events_per_page, PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-        $stmt->execute();
-        $my_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 } catch (PDOException $e) {
     $error_message = "Error: " . $e->getMessage();
@@ -368,957 +404,9 @@ try {
     <title>Events - Green Roots</title>
     <link rel="icon" type="image/png" href="<?php echo $favicon_base64; ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/events.css">
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jsPDF.umd.min.js" defer></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Arial', sans-serif;
-        }
-
-        body {
-            background: #f5f7fa;
-            color: #333;
-            overflow-x: hidden;
-        }
-
-        .container {
-            display: flex;
-            min-height: 100vh;
-            max-width: 1920px;
-            margin: 0 auto;
-        }
-
-        .sidebar {
-            width: 80px;
-            background: #fff;
-            padding: 17px 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            border-radius: 0 20px 20px 0;
-            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
-            position: fixed;
-            top: 0;
-            bottom: 0;
-            overflow-y: auto;
-        }
-
-        .sidebar img.logo {
-            width: 70px;
-            margin-bottom: 20px;
-        }
-
-        .sidebar a {
-            margin: 18px 0;
-            color: #666;
-            text-decoration: none;
-            font-size: 24px;
-            transition: transform 0.3s, color 0.3s;
-        }
-
-        .sidebar a:hover {
-            color: #4CAF50;
-            animation: bounce 0.3s ease-out;
-        }
-
-        @keyframes bounce {
-
-            0%,
-            100% {
-                transform: translateY(0);
-            }
-
-            50% {
-                transform: translateY(-5px);
-            }
-        }
-
-        .sidebar a.active {
-            color: #4CAF50;
-        }
-
-        .main-content {
-            flex: 1;
-            padding: 40px;
-            margin-left: 80px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 40px;
-            width: 100%;
-            position: relative;
-        }
-
-        .header h1 {
-            font-size: 36px;
-            color: #4CAF50;
-        }
-
-        .header .notification-search {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .header .notification-search .notification {
-            font-size: 24px;
-            color: #666;
-            cursor: pointer;
-            transition: color 0.3s, transform 0.3s;
-        }
-
-        .header .notification-search .notification:hover {
-            color: #4CAF50;
-            transform: scale(1.1);
-        }
-
-        .header .notification-search .search-bar {
-            display: flex;
-            align-items: center;
-            background: #fff;
-            padding: 8px 15px;
-            border-radius: 25px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            position: relative;
-            width: 300px;
-        }
-
-        .header .notification-search .search-bar i {
-            margin-right: 10px;
-            color: #666;
-            font-size: 16px;
-        }
-
-        .header .notification-search .search-bar input {
-            border: none;
-            outline: none;
-            padding: 5px;
-            width: 90%;
-            font-size: 16px;
-        }
-
-        .header .notification-search .search-bar .search-results {
-            position: absolute;
-            top: 50px;
-            left: 0;
-            background: #fff;
-            width: 100%;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            display: none;
-            z-index: 10;
-        }
-
-        .header .notification-search .search-bar .search-results.active {
-            display: block;
-        }
-
-        .header .notification-search .search-bar .search-results a {
-            display: block;
-            padding: 12px;
-            color: #333;
-            text-decoration: none;
-            border-bottom: 1px solid #e0e7ff;
-            font-size: 16px;
-        }
-
-        .header .notification-search .search-bar .search-results a:hover {
-            background: #e0e7ff;
-        }
-
-        .header .profile {
-            position: relative;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            cursor: pointer;
-        }
-
-        .header .profile:hover {
-            opacity: 0.8;
-        }
-
-        .header .profile img {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-
-        .header .profile span {
-            font-size: 18px;
-        }
-
-        .profile-dropdown {
-            position: absolute;
-            top: 60px;
-            right: 0;
-            background: #fff;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            display: none;
-            z-index: 10;
-        }
-
-        .profile-dropdown.active {
-            display: block;
-        }
-
-        .profile-dropdown .email {
-            padding: 15px 20px;
-            color: #666;
-            font-size: 16px;
-            border-bottom: 1px solid #e0e7ff;
-        }
-
-        .profile-dropdown a {
-            display: block;
-            padding: 15px 20px;
-            color: #333;
-            text-decoration: none;
-            font-size: 16px;
-        }
-
-        .profile-dropdown a:hover {
-            background: #e0e7ff;
-        }
-
-        .events-nav {
-            width: 100%;
-            max-width: 800px;
-            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
-            padding: 15px 0;
-            display: flex;
-            justify-content: space-around;
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .events-nav a {
-            color: #666;
-            text-decoration: none;
-            font-size: 16px;
-            font-weight: bold;
-            padding: 10px 20px;
-            transition: color 0.5s, background 0.5s;
-            border-radius: 10px;
-        }
-
-        .events-nav a.active {
-            color: #fff;
-            background: #4CAF50;
-        }
-
-        .events-nav a:hover {
-            color: #4CAF50;
-            background: #BBEBBF;
-        }
-
-        .events-section {
-            background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-            width: 100%;
-            max-width: 800px;
-            margin-bottom: 30px;
-            height: 650px;
-            display: flex;
-            flex-direction: column;
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        .events-section h2 {
-            font-size: 28px;
-            color: #2E7D32;
-            margin-bottom: 25px;
-        }
-
-        .filter-bar {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .filter-bar label {
-            font-size: 16px;
-            color: #666;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .filter-bar label i {
-            color: #4CAF50;
-        }
-
-        .filter-bar input[type="date"],
-        .filter-bar select {
-            padding: 8px;
-            border: 1px solid #e0e7ff;
-            border-radius: 5px;
-            font-size: 14px;
-            transition: border-color 0.3s, box-shadow 0.3s;
-        }
-
-        .filter-bar input[type="date"]:hover,
-        .filter-bar select:hover {
-            border-color: #4CAF50;
-        }
-
-        .filter-bar input[type="date"]:focus,
-        .filter-bar select:focus {
-            border-color: #4CAF50;
-            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
-            outline: none;
-        }
-
-        .events-list {
-            flex: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            padding-right: 10px;
-        }
-
-        .events-list::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .events-list::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-
-        .events-list::-webkit-scrollbar-thumb {
-            background: #4CAF50;
-            border-radius: 10px;
-        }
-
-        .events-list::-webkit-scrollbar-thumb:hover {
-            background: #388E3C;
-        }
-
-        .event-card {
-            background: #fff;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            border-left: 5px solid #4CAF50;
-            transition: transform 0.2s;
-        }
-
-        .event-card:hover {
-            transform: scale(1.01);
-        }
-
-        .event-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-bottom: 10px;
-        }
-
-        .event-card-header h3 {
-            font-size: 18px;
-            color: #4CAF50;
-            margin: 0;
-            word-wrap: break-word;
-            max-width: 70%;
-        }
-
-        .event-card-body {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .event-details {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .event-detail-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 15px;
-            color: #333;
-            line-height: 1.6;
-        }
-
-        .event-detail-item i {
-            color: #4CAF50;
-        }
-
-        .event-detail-item.description {
-            display: block;
-            margin-top: 5px;
-        }
-
-        .event-detail-item.capacity {
-            font-weight: bold;
-            color: #666;
-        }
-
-        .event-actions {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-        }
-
-        .event-card .join-btn {
-            background: #4CAF50;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s, transform 0.1s;
-        }
-
-        .event-card .join-btn:hover {
-            background: #388E3C;
-            transform: scale(1.02);
-        }
-
-        .event-card .join-btn.disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .event-status {
-            font-weight: bold;
-        }
-
-        .status-upcoming {
-            color: #10b981;
-        }
-
-        .status-ongoing {
-            color: #f59e0b;
-        }
-
-        .status-past {
-            color: #dc2626;
-        }
-
-        .status-confirmed {
-            color: #10b981;
-            font-weight: bold;
-        }
-
-        .no-data {
-            text-align: center;
-            color: #666;
-            font-style: italic;
-            font-size: 16px;
-            margin-top: 20px;
-        }
-
-        .join-message {
-            background: #d1fae5;
-            color: #10b981;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-        }
-
-        .join-error {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-        }
-
-        .pagination {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .pagination a {
-            padding: 8px 12px;
-            background: #fff;
-            color: #4CAF50;
-            text-decoration: none;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-            transition: background 0.3s, transform 0.1s;
-        }
-
-        .pagination a:hover {
-            background: #E8F5E9;
-            transform: scale(1.02);
-        }
-
-        .pagination a.disabled {
-            color: #ccc;
-            pointer-events: none;
-            background: #f5f5f5;
-        }
-
-        .pagination a.active {
-            background: #4CAF50;
-            color: #fff;
-        }
-
-        .error-message {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 12px;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-size: 16px;
-            width: 100%;
-            max-width: 800px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        /* Modal Styles */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal-content {
-            background: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            width: 90%;
-            max-width: 500px;
-            position: relative;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-        }
-
-        .modal-content h3 {
-            font-size: 24px;
-            color: #4CAF50;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .modal-content .modal-details {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .modal-detail-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 16px;
-            color: #333;
-            line-height: 1.6;
-        }
-
-        .modal-detail-item i {
-            color: #4CAF50;
-        }
-
-        .modal-content .qr-code {
-            margin: 20px 0;
-            text-align: center;
-        }
-
-        .modal-content .download-btn {
-            background: #4CAF50;
-            color: #fff;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 25px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s, transform 0.1s;
-            display: block;
-            margin: 0 auto;
-        }
-
-        .modal-content .download-btn:hover {
-            background: #388E3C;
-            transform: scale(1.02);
-        }
-
-        .modal-content .close-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            font-size: 24px;
-            color: #666;
-            cursor: pointer;
-        }
-
-        .modal-content .close-btn:hover {
-            color: #dc2626;
-        }
-
-        /* Loading Spinner for AJAX */
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        .loading-spinner.active {
-            display: block;
-        }
-
-        .loading-spinner::after {
-            content: '';
-            display: inline-block;
-            width: 24px;
-            height: 24px;
-            border: 3px solid #4CAF50;
-            border-radius: 50%;
-            border-top-color: transparent;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        /* Mobile Responsive Design */
-        @media (max-width: 768px) {
-            .container {
-                flex-direction: column;
-            }
-
-            .sidebar {
-                width: 100%;
-                flex-direction: row;
-                justify-content: space-around;
-                position: fixed;
-                top: auto;
-                bottom: 0;
-                border-radius: 15px 15px 0 0;
-                box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
-                padding: 10px 0;
-                z-index: 100;
-            }
-
-            .sidebar img.logo {
-                display: none;
-            }
-
-            .sidebar a {
-                margin: 0 10px;
-                font-size: 18px;
-            }
-
-            .main-content {
-                padding: 20px;
-                padding-bottom: 80px;
-                margin-left: 0;
-            }
-
-            .header {
-                flex-direction: row;
-                align-items: center;
-                gap: 15px;
-                width: 100%;
-            }
-
-            .header h1 {
-                font-size: 24px;
-            }
-
-            .header .notification-search {
-                flex-direction: row;
-                align-items: center;
-                gap: 10px;
-                width: auto;
-                flex-grow: 1;
-            }
-
-            .header .notification-search .notification {
-                font-size: 20px;
-                flex-shrink: 0;
-            }
-
-            .header .notification-search .search-bar {
-                width: 100%;
-                max-width: 200px;
-                padding: 5px 10px;
-                flex-grow: 1;
-            }
-
-            .header .notification-search .search-bar i {
-                font-size: 14px;
-                margin-right: 5px;
-            }
-
-            .header .notification-search .search-bar input {
-                font-size: 14px;
-            }
-
-            .header .notification-search .search-bar .search-results {
-                top: 40px;
-            }
-
-            .header .profile {
-                margin-top: 0;
-                flex-shrink: 0;
-            }
-
-            .header .profile img {
-                width: 40px;
-                height: 40px;
-            }
-
-            .header .profile span {
-                font-size: 16px;
-                display: none;
-                /* Hide the name to save space */
-            }
-
-            .profile-dropdown {
-                top: 50px;
-                width: 200px;
-                right: 0;
-            }
-
-            .events-nav {
-                flex-direction: column;
-                padding: 10px;
-            }
-
-            .events-nav a {
-                padding: 10px;
-                font-size: 14px;
-                border-bottom: 1px solid #e0e7ff;
-            }
-
-            .events-nav a:last-child {
-                border-bottom: none;
-            }
-
-            .events-nav a.active {
-                background: #4CAF50;
-                color: #fff;
-            }
-
-            .events-section {
-                padding: 20px;
-                height: 500px;
-            }
-
-            .events-section h2 {
-                font-size: 24px;
-            }
-
-            .filter-bar {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .filter-bar input[type="date"],
-            .filter-bar select {
-                width: 100%;
-            }
-
-            .event-card {
-                padding: 15px;
-                gap: 10px;
-            }
-
-            .event-card-header h3 {
-                font-size: 16px;
-                max-width: 100%;
-            }
-
-            .event-detail-item {
-                font-size: 13px;
-            }
-
-            .event-actions {
-                justify-content: center;
-            }
-
-            .event-card .join-btn {
-                width: 100%;
-                padding: 8px;
-                font-size: 12px;
-            }
-
-            .no-data {
-                font-size: 14px;
-            }
-
-            .join-message,
-            .join-error {
-                font-size: 14px;
-            }
-
-            .pagination a {
-                padding: 6px 10px;
-                font-size: 14px;
-            }
-
-            .error-message {
-                font-size: 14px;
-            }
-
-            .modal-content {
-                padding: 20px;
-                width: 95%;
-            }
-
-            .modal-content h3 {
-                font-size: 20px;
-            }
-
-            .modal-detail-item {
-                font-size: 14px;
-            }
-
-            .modal-content .download-btn {
-                font-size: 14px;
-                padding: 8px 15px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .header h1 {
-                font-size: 20px;
-            }
-
-            .header .notification-search {
-                gap: 5px;
-            }
-
-            .header .notification-search .notification {
-                font-size: 18px;
-            }
-
-            .header .notification-search .search-bar {
-                max-width: 150px;
-                padding: 4px 8px;
-            }
-
-            .header .notification-search .search-bar i {
-                font-size: 12px;
-                margin-right: 4px;
-            }
-
-            .header .notification-search .search-bar input {
-                font-size: 12px;
-            }
-
-            .events-section {
-                padding: 15px;
-                height: 450px;
-            }
-
-            .events-section h2 {
-                font-size: 20px;
-            }
-
-            .filter-bar label {
-                font-size: 14px;
-            }
-
-            .filter-bar input[type="date"],
-            .filter-bar select {
-                font-size: 12px;
-                padding: 6px;
-            }
-
-            .event-card {
-                padding: 10px;
-            }
-
-            .event-card-header h3 {
-                font-size: 14px;
-            }
-
-            .event-detail-item {
-                font-size: 12px;
-            }
-
-            .event-card .join-btn {
-                font-size: 10px;
-                padding: 6px;
-            }
-
-            .no-data {
-                font-size: 12px;
-            }
-
-            .join-message,
-            .join-error {
-                font-size: 12px;
-            }
-
-            .pagination a {
-                font-size: 12px;
-                padding: 4px 8px;
-            }
-
-            .modal-content h3 {
-                font-size: 18px;
-            }
-
-            .modal-detail-item {
-                font-size: 12px;
-            }
-
-            .modal-content .download-btn {
-                font-size: 12px;
-                padding: 6px 12px;
-            }
-        }
-    </style>
 </head>
 
 <body>
@@ -1372,13 +460,13 @@ try {
                     <h2>Upcoming Events</h2>
                     <div class="filter-bar">
                         <div>
-                            <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date:</label>
+                            <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date</label>
                             <input type="date" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
                         </div>
                         <div>
-                            <label for="filter_province"><i class="fas fa-map"></i> Province:</label>
+                            <label for="filter_province"><i class="fas fa-map"></i> Province</label>
                             <select id="filter_province" name="filter_province">
-                                <option value="">All Events in Region X</option>
+                                <option value="">Select Province</option>
                                 <?php foreach ($provinces as $province): ?>
                                     <option value="<?php echo htmlspecialchars($province); ?>" <?php echo $filter_province === $province ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($province); ?>
@@ -1386,10 +474,32 @@ try {
                                 <?php endforeach; ?>
                             </select>
                         </div>
+                        <div>
+                            <label for="filter_city"><i class="fas fa-map"></i> City</label>
+                            <select id="filter_city" name="filter_city">
+                                <option value="">Select City</option>
+                                <?php foreach ($cities as $city): ?>
+                                    <option value="<?php echo htmlspecialchars($city); ?>" <?php echo $filter_city === $city ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($city); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="filter_barangay"><i class="fas fa-map"></i> Barangay</label>
+                            <select id="filter_barangay" name="filter_barangay">
+                                <option value="">Select Barangay</option>
+                                <?php foreach ($barangays as $barangay): ?>
+                                    <option value="<?php echo htmlspecialchars($barangay); ?>" <?php echo $filter_barangay === $barangay ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($barangay); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                     </div>
                     <div class="events-list">
                         <?php if (empty($upcoming_events)): ?>
-                            <p class="no-data">No upcoming events available in your region (<?php echo htmlspecialchars($user['region_name'] ?? 'N/A'); ?>).</p>
+                            <p class="no-data">No upcoming events available.</p>
                         <?php else: ?>
                             <?php foreach ($upcoming_events as $event): ?>
                                 <?php
@@ -1446,7 +556,7 @@ try {
                     <h2>My Events</h2>
                     <div class="filter-bar">
                         <div>
-                            <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date:</label>
+                            <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date</label>
                             <input type="date" id="filter_date" name="filter_date" value="<?php echo htmlspecialchars($filter_date); ?>">
                         </div>
                     </div>
@@ -1519,7 +629,9 @@ try {
                     $query_params = http_build_query([
                         'tab' => $active_tab,
                         'filter_date' => $filter_date,
-                        'filter_province' => $filter_province
+                        'filter_province' => $filter_province,
+                        'filter_city' => $filter_city,
+                        'filter_barangay' => $filter_barangay
                     ]);
                     ?>
                     <a href="?<?php echo $query_params; ?>&page=1" class="<?php echo $page <= 1 ? 'disabled' : ''; ?>">First</a>
@@ -1565,409 +677,384 @@ try {
 
     <script src="../assets/js/jsPDF-3.0.1/dist/jspdf.umd.min.js"></script>
     <script>
-        // Search bar functionality
-        const functionalities = [{
-                name: 'Dashboard',
-                url: 'dashboard.php'
-            },
-            {
-                name: 'Submit Planting',
-                url: 'submit.php'
-            },
-            {
-                name: 'Planting Site',
-                url: 'planting_site.php'
-            },
-            {
-                name: 'Leaderboard',
-                url: 'leaderboard.php'
-            },
-            {
-                name: 'Rewards',
-                url: 'rewards.php'
-            },
-            {
-                name: 'Events',
-                url: 'events.php'
-            },
-            {
-                name: 'History',
-                url: 'history.php'
-            },
-            {
-                name: 'Feedback',
-                url: 'feedback.php'
-            },
-            {
-                name: 'Logout',
-                url: 'logout.php'
-            }
-        ];
+       // Search bar functionality
+const functionalities = [
+    { name: 'Dashboard', url: 'dashboard.php' },
+    { name: 'Submit Planting', url: 'submit.php' },
+    { name: 'Planting Site', url: 'planting_site.php' },
+    { name: 'Leaderboard', url: 'leaderboard.php' },
+    { name: 'Rewards', url: 'rewards.php' },
+    { name: 'Events', url: 'events.php' },
+    { name: 'History', url: 'history.php' },
+    { name: 'Feedback', url: 'feedback.php' },
+    { name: 'Logout', url: 'logout.php' }
+];
 
-        const searchInput = document.querySelector('#searchInput');
-        const searchResults = document.querySelector('#searchResults');
+const searchInput = document.querySelector('#searchInput');
+const searchResults = document.querySelector('#searchResults');
 
-        searchInput.addEventListener('input', function(e) {
-            const query = e.target.value.toLowerCase();
-            searchResults.innerHTML = '';
-            searchResults.classList.remove('active');
+searchInput.addEventListener('input', function(e) {
+    const query = e.target.value.toLowerCase();
+    searchResults.innerHTML = '';
+    searchResults.classList.remove('active');
 
-            if (query.length > 0) {
-                const matches = functionalities.filter(func =>
-                    func.name.toLowerCase().startsWith(query)
-                );
+    if (query.length > 0) {
+        const matches = functionalities.filter(func =>
+            func.name.toLowerCase().startsWith(query)
+        );
 
-                if (matches.length > 0) {
-                    matches.forEach(func => {
-                        const link = document.createElement('a');
-                        link.href = func.url;
-                        link.textContent = func.name;
-                        searchResults.appendChild(link);
-                    });
-                    searchResults.classList.add('active');
-                }
-            }
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-                searchResults.classList.remove('active');
-            }
-        });
-
-        // Profile dropdown functionality
-        const profileBtn = document.querySelector('#profileBtn');
-        const profileDropdown = document.querySelector('#profileDropdown');
-
-        profileBtn.addEventListener('click', function() {
-            profileDropdown.classList.toggle('active');
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
-                profileDropdown.classList.remove('active');
-            }
-        });
-
-        // Filter functionality
-        const filterDate = document.querySelector('#filter_date');
-        const filterProvince = document.querySelector('#filter_province');
-
-        function applyFilters() {
-            const params = new URLSearchParams(window.location.search);
-            params.set('filter_date', filterDate.value);
-            if (filterProvince) {
-                params.set('filter_province', filterProvince.value);
-            }
-            params.set('page', '1');
-            window.location.search = params.toString();
+        if (matches.length > 0) {
+            matches.forEach(func => {
+                const link = document.createElement('a');
+                link.href = func.url;
+                link.textContent = func.name;
+                searchResults.appendChild(link);
+            });
+            searchResults.classList.add('active');
         }
+    }
+});
 
-        filterDate.addEventListener('change', applyFilters);
-        if (filterProvince) {
-            filterProvince.addEventListener('change', applyFilters);
-        }
+document.addEventListener('click', function(e) {
+    if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+        searchResults.classList.remove('active');
+    }
+});
 
-        // Modal functionality
-        const modal = document.querySelector('#qrModal');
-        const closeModal = document.querySelector('#closeModal');
-        const modalUsername = document.querySelector('#modalUsername');
-        const modalEmail = document.querySelector('#modalEmail');
-        const modalEventTitle = document.querySelector('#modalEventTitle');
-        const modalEventDate = document.querySelector('#modalEventDate');
-        const modalEventLocation = document.querySelector('#modalEventLocation');
-        const modalEventBarangay = document.querySelector('#modalEventBarangay');
-        const modalQRCode = document.querySelector('#modalQRCode');
-        const downloadBtn = document.querySelector('#downloadBtn');
-        const loadingSpinner = document.querySelector('#loadingSpinner');
+// Profile dropdown functionality
+const profileBtn = document.querySelector('#profileBtn');
+const profileDropdown = document.querySelector('#profileDropdown');
 
-        // Ensure QRCode library is loaded before generating QR codes
-        function waitForQRCode(callback) {
+profileBtn.addEventListener('click', function() {
+    profileDropdown.classList.toggle('active');
+});
+
+document.addEventListener('click', function(e) {
+    if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
+        profileDropdown.classList.remove('active');
+    }
+});
+
+// Filter functionality
+const filterDate = document.querySelector('#filter_date');
+const filterProvince = document.querySelector('#filter_province');
+const filterCity = document.querySelector('#filter_city');
+const filterBarangay = document.querySelector('#filter_barangay');
+
+function updateCityOptions() {
+    const province = filterProvince.value;
+    const url = `?tab=upcoming&filter_date=${filterDate.value}&filter_province=${province}&filter_city=&filter_barangay=`;
+    window.location.href = url;
+}
+
+function updateBarangayOptions() {
+    const city = filterCity.value;
+    const url = `?tab=upcoming&filter_date=${filterDate.value}&filter_province=${filterProvince.value}&filter_city=${city}&filter_barangay=`;
+    window.location.href = url;
+}
+
+function applyFilters() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('filter_date', filterDate.value);
+    params.set('filter_province', filterProvince.value);
+    params.set('filter_city', filterCity.value);
+    params.set('filter_barangay', filterBarangay.value);
+    params.set('page', '1');
+    window.location.search = params.toString();
+}
+
+filterDate.addEventListener('change', applyFilters);
+if (filterProvince) {
+    filterProvince.addEventListener('change', function() {
+        updateCityOptions();
+    });
+}
+if (filterCity) {
+    filterCity.addEventListener('change', function() {
+        updateBarangayOptions();
+    });
+}
+if (filterBarangay) {
+    filterBarangay.addEventListener('change', applyFilters);
+}
+
+// Modal functionality
+const modal = document.querySelector('#qrModal');
+const closeModal = document.querySelector('#closeModal');
+const modalUsername = document.querySelector('#modalUsername');
+const modalEmail = document.querySelector('#modalEmail');
+const modalEventTitle = document.querySelector('#modalEventTitle');
+const modalEventDate = document.querySelector('#modalEventDate');
+const modalEventLocation = document.querySelector('#modalEventLocation');
+const modalEventBarangay = document.querySelector('#modalEventBarangay');
+const modalQRCode = document.querySelector('#modalQRCode');
+const downloadBtn = document.querySelector('#downloadBtn');
+const loadingSpinner = document.querySelector('#loadingSpinner');
+
+// Ensure QRCode library is loaded before generating QR codes
+function waitForQRCode(callback) {
+    if (typeof QRCode !== 'undefined') {
+        callback();
+    } else {
+        const maxAttempts = 10;
+        let attempts = 0;
+        const interval = setInterval(() => {
+            attempts++;
             if (typeof QRCode !== 'undefined') {
+                clearInterval(interval);
                 callback();
+            } else if (attempts >= maxAttempts) {
+                clearInterval(interval);
+                console.error('QRCode library failed to load after maximum attempts.');
+                modalQRCode.innerHTML = '<p style="color: #dc2626;">Error: Unable to generate QR code. Please try again later.</p>';
+                loadingSpinner.classList.remove('active');
+            }
+        }, 500);
+    }
+}
+
+// Generate QR code
+function generateQRCode(element, data) {
+    waitForQRCode(() => {
+        element.innerHTML = '';
+        try {
+            new QRCode(element, {
+                text: data,
+                width: 150,
+                height: 150,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+            console.log('QR code generated successfully.');
+        } catch (error) {
+            console.error('Failed to generate QR code:', error);
+            element.innerHTML = '<p style="color: #dc2626;">Error: Failed to generate QR code. Please try again.</p>';
+        }
+    });
+}
+
+// Handle Join Event buttons
+document.querySelectorAll('.join-btn:not(.view-qr-btn)').forEach(button => {
+    button.addEventListener('click', function() {
+        const eventId = this.getAttribute('data-event-id');
+        if (this.classList.contains('disabled')) return;
+
+        // Show loading spinner
+        loadingSpinner.classList.add('active');
+
+        // AJAX request to join event
+        fetch('', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `join_event=true&event_id=${eventId}&ajax=true`
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            loadingSpinner.classList.remove('active');
+            if (data.success) {
+                // Populate modal
+                modalUsername.textContent = data.user.username;
+                modalEmail.textContent = data.user.email;
+                modalEventTitle.textContent = data.event.title;
+                modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+                modalEventLocation.textContent = data.event.location;
+                modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
+
+                // Generate QR code
+                generateQRCode(modalQRCode, data.qr_code);
+
+                // Show modal
+                modal.style.display = 'flex';
+
+                // Store data for PDF generation
+                downloadBtn.onclick = () => generatePDF(data);
             } else {
-                const maxAttempts = 10;
-                let attempts = 0;
-                const interval = setInterval(() => {
-                    attempts++;
-                    if (typeof QRCode !== 'undefined') {
-                        clearInterval(interval);
-                        callback();
-                    } else if (attempts >= maxAttempts) {
-                        clearInterval(interval);
-                        console.error('QRCode library failed to load after maximum attempts.');
-                        modalQRCode.innerHTML = '<p style="color: #dc2626;">Error: Unable to generate QR code. Please try again later.</p>';
-                        loadingSpinner.classList.remove('active');
-                    }
-                }, 500);
-            }
-        }
-
-        // Generate QR code
-        function generateQRCode(element, data) {
-            waitForQRCode(() => {
-                element.innerHTML = '';
-                try {
-                    new QRCode(element, {
-                        text: data,
-                        width: 150,
-                        height: 150,
-                        colorDark: "#000000",
-                        colorLight: "#ffffff",
-                        correctLevel: QRCode.CorrectLevel.H
-                    });
-                    console.log('QR code generated successfully.');
-                } catch (error) {
-                    console.error('Failed to generate QR code:', error);
-                    element.innerHTML = '<p style="color: #dc2626;">Error: Failed to generate QR code. Please try again.</p>';
-                }
-            });
-        }
-
-        // Handle Join Event buttons
-        document.querySelectorAll('.join-btn:not(.view-qr-btn)').forEach(button => {
-            button.addEventListener('click', function() {
-                const eventId = this.getAttribute('data-event-id');
-                if (this.classList.contains('disabled')) return;
-
-                // Show loading spinner
-                loadingSpinner.classList.add('active');
-
-                // AJAX request to join event
-                fetch('', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        },
-                        body: `join_event=true&event_id=${eventId}&ajax=true`
-                    })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        loadingSpinner.classList.remove('active');
-                        if (data.success) {
-                            // Populate modal
-                            modalUsername.textContent = data.user.username;
-                            modalEmail.textContent = data.user.email;
-                            modalEventTitle.textContent = data.event.title;
-                            modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
-                                month: 'long',
-                                day: 'numeric',
-                                year: 'numeric'
-                            });
-                            modalEventLocation.textContent = data.event.location;
-                            modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
-
-                            // Generate QR code
-                            generateQRCode(modalQRCode, data.qr_code);
-
-                            // Show modal
-                            modal.style.display = 'flex';
-
-                            // Store data for PDF generation
-                            downloadBtn.onclick = () => generatePDF(data);
-                        } else {
-                            loadingSpinner.classList.remove('active');
-                            alert(data.message || 'Failed to join event.');
-                        }
-                    })
-                    .catch(error => {
-                        loadingSpinner.classList.remove('active');
-                        console.error('Error:', error);
-                        alert('An error occurred while joining the event: ' + error.message);
-                    });
-            });
-        });
-
-        // Handle View QR Code buttons in My Events
-        document.querySelectorAll('.view-qr-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const eventId = this.getAttribute('data-event-id');
-
-                // Show loading spinner
-                loadingSpinner.classList.add('active');
-
-                // AJAX request to view QR code
-                fetch('', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        },
-                        body: `view_qr_code=true&event_id=${eventId}`
-                    })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        loadingSpinner.classList.remove('active');
-                        if (data.success) {
-                            // Populate modal
-                            modalUsername.textContent = data.user.username;
-                            modalEmail.textContent = data.user.email;
-                            modalEventTitle.textContent = data.event.title;
-                            modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
-                                month: 'long',
-                                day: 'numeric',
-                                year: 'numeric'
-                            });
-                            modalEventLocation.textContent = data.event.location;
-                            modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
-
-                            // Generate QR code
-                            generateQRCode(modalQRCode, data.qr_code);
-
-                            // Show modal
-                            modal.style.display = 'flex';
-
-                            // Store data for PDF generation
-                            downloadBtn.onclick = () => generatePDF(data);
-                        } else {
-                            loadingSpinner.classList.remove('active');
-                            alert(data.message || 'Failed to fetch ticket.');
-                        }
-                    })
-                    .catch(error => {
-                        loadingSpinner.classList.remove('active');
-                        console.error('Error:', error);
-                        alert('An error occurred while fetching the ticket: ' + error.message);
-                    });
-            });
-        });
-
-        // Close modal
-        closeModal.addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
-
-        window.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
-
-        // Generate PDF
-        function generatePDF(data) {
-            loadingSpinner.classList.add('active');
-
-            try {
-                const {
-                    jsPDF
-                } = window.jspdf;
-                const doc = new jsPDF();
-
-                // Fonts and colors
-                const primaryColor = [76, 175, 80]; // #4CAF50
-                const secondaryColor = [51, 51, 51]; // #333
-                const labelColor = [120, 120, 120]; // #777
-
-                // Header
-                doc.setFontSize(22);
-                doc.setTextColor(...primaryColor);
-                doc.setFont('helvetica', 'bold');
-                doc.text('Tree Planting Event Ticket', 105, 25, {
-                    align: 'center'
-                });
-
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(...secondaryColor);
-                doc.text('Presented by Green Roots Initiative', 105, 35, {
-                    align: 'center'
-                });
-
-                // Draw horizontal divider
-                doc.setDrawColor(...primaryColor);
-                doc.setLineWidth(0.5);
-                doc.line(20, 40, 190, 40);
-
-                // User & Event Info
-                doc.setFontSize(12);
-                doc.setTextColor(...labelColor);
-                doc.text('Name:', 20, 55);
-                doc.text('Email:', 20, 65);
-                doc.text('Event:', 20, 75);
-                doc.text('Date:', 20, 85);
-                doc.text('Location:', 20, 95);
-                doc.text('Barangay:', 20, 105);
-
-                doc.setFont('helvetica', 'bold');
-                doc.setTextColor(...secondaryColor);
-                doc.text(`${data.user.username}`, 50, 55);
-                doc.text(`${data.user.email}`, 50, 65);
-                doc.text(`${data.event.title}`, 50, 75);
-                doc.text(
-                    new Date(data.event.event_date).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric',
-                    }),
-                    50, 85
-                );
-                doc.text(`${data.event.location}`, 50, 95);
-                doc.text(`${data.event.barangay_name || 'N/A'}`, 50, 105);
-
-                // QR Code
-                try {
-                    const qrCanvas = modalQRCode.querySelector('canvas');
-                    if (!qrCanvas) throw new Error('QR code canvas not found in modal');
-
-                    const qrImage = qrCanvas.toDataURL('image/png');
-                    if (qrImage === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJIAAACWCAYAAABs0x1ZAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABeSURBVHhe7cEBDQAAAMKg909tDjtwABS7sYMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB7B8HbgD4qS5cAAAAASUVORK5CYII=') {
-                        throw new Error('QR code canvas is empty');
-                    }
-
-                    doc.addImage(qrImage, 'PNG', 80, 120, 50, 50);
-                    doc.setDrawColor(...primaryColor);
-                    doc.rect(80, 120, 50, 50);
-
-                    // Note
-                    doc.setFontSize(10);
-                    doc.setTextColor(102, 102, 102);
-                    doc.setFont('helvetica', 'italic');
-                    doc.text('Present this QR code at the event for attendance verification.', 105, 180, {
-                        align: 'center'
-                    });
-
-                    doc.save(`Event_${data.event.title}_Ticket.pdf`);
-                    console.log('PDF generated successfully with QR code.');
-                } catch (error) {
-                    console.error('Failed to add QR code to PDF:', error);
-                    doc.setTextColor(220, 38, 38);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text('⚠ Unable to include QR code.', 20, 130);
-                    doc.save(`Event_${data.event.title}_Ticket.pdf`);
-                    alert('Failed to include QR code in the PDF. The ticket has been downloaded without it.');
-                }
-
                 loadingSpinner.classList.remove('active');
-            } catch (error) {
-                console.error('Failed to generate PDF:', error);
-                loadingSpinner.classList.remove('active');
-                alert('Error: Failed to generate PDF. Please try again: ' + error.message);
+                alert(data.message || 'Failed to join event.');
             }
+        })
+        .catch(error => {
+            loadingSpinner.classList.remove('active');
+            console.error('Error:', error);
+            alert('An error occurred while joining the event: ' + error.message);
+        });
+    });
+});
+
+// Handle View QR Code buttons in My Events
+document.querySelectorAll('.view-qr-btn').forEach(button => {
+    button.addEventListener('click', function() {
+        const eventId = this.getAttribute('data-event-id');
+
+        // Show loading spinner
+        loadingSpinner.classList.add('active');
+
+        // AJAX request to view QR code
+        fetch('', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `view_qr_code=true&event_id=${eventId}`
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            loadingSpinner.classList.remove('active');
+            if (data.success) {
+                // Populate modal
+                modalUsername.textContent = data.user.username;
+                modalEmail.textContent = data.user.email;
+                modalEventTitle.textContent = data.event.title;
+                modalEventDate.textContent = new Date(data.event.event_date).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+                modalEventLocation.textContent = data.event.location;
+                modalEventBarangay.textContent = data.event.barangay_name || 'N/A';
+
+                // Generate QR code
+                generateQRCode(modalQRCode, data.qr_code);
+
+                // Show modal
+                modal.style.display = 'flex';
+
+                // Store data for PDF generation
+                downloadBtn.onclick = () => generatePDF(data);
+            } else {
+                loadingSpinner.classList.remove('active');
+                alert(data.message || 'Failed to fetch ticket.');
+            }
+        })
+        .catch(error => {
+            loadingSpinner.classList.remove('active');
+            console.error('Error:', error);
+            alert('An error occurred while fetching the ticket: ' + error.message);
+        });
+    });
+});
+
+// Close modal
+closeModal.addEventListener('click', () => {
+    modal.style.display = 'none';
+});
+
+window.addEventListener('click', (e) => {
+    if (e.target === modal) {
+        modal.style.display = 'none';
+    }
+});
+
+// Generate PDF
+function generatePDF(data) {
+    loadingSpinner.classList.add('active');
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Fonts and colors
+        const primaryColor = [76, 175, 80]; // #4CAF50
+        const secondaryColor = [51, 51, 51]; // #333
+        const labelColor = [120, 120, 120]; // #777
+
+        // Header
+        doc.setFontSize(22);
+        doc.setTextColor(...primaryColor);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Tree Planting Event Ticket', 105, 25, { align: 'center' });
+
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...secondaryColor);
+        doc.text('Presented by Green Roots Initiative', 105, 35, { align: 'center' });
+
+        // Draw horizontal divider
+        doc.setDrawColor(...primaryColor);
+        doc.setLineWidth(0.5);
+        doc.line(20, 40, 190, 40);
+
+        // User & Event Info
+        doc.setFontSize(12);
+        doc.setTextColor(...labelColor);
+        doc.text('Name:', 20, 55);
+        doc.text('Email:', 20, 65);
+        doc.text('Event:', 20, 75);
+        doc.text('Date:', 20, 85);
+        doc.text('Location:', 20, 95);
+        doc.text('Barangay:', 20, 105);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...secondaryColor);
+        doc.text(`${data.user.username}`, 50, 55);
+        doc.text(`${data.user.email}`, 50, 65);
+        doc.text(`${data.event.title}`, 50, 75);
+        doc.text(
+            new Date(data.event.event_date).toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+            }),
+            50, 85
+        );
+        doc.text(`${data.event.location}`, 50, 95);
+        doc.text(`${data.event.barangay_name || 'N/A'}`, 50, 105);
+
+        // QR Code
+        try {
+            const qrCanvas = modalQRCode.querySelector('canvas');
+            if (!qrCanvas) throw new Error('QR code canvas not found in modal');
+
+            const qrImage = qrCanvas.toDataURL('image/png');
+            if (qrImage === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJIAAACWCAYAAABs0x1ZAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABeSURBVHhe7cEBDQAAAMKg909tDjtwABS7sYMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB7B8HbgD4qS5cAAAAASUVORK5CYII=') {
+                throw new Error('QR code canvas is empty');
+            }
+
+            doc.addImage(qrImage, 'PNG', 80, 120, 50, 50);
+            doc.setDrawColor(...primaryColor);
+            doc.rect(80, 120, 50, 50);
+
+            // Note
+            doc.setFontSize(10);
+            doc.setTextColor(102, 102, 102);
+            doc.setFont('helvetica', 'italic');
+            doc.text('Present this QR code at the event for attendance verification.', 105, 180, { align: 'center' });
+
+            doc.save(`Event_${data.event.title}_Ticket.pdf`);
+            console.log('PDF generated successfully with QR code.');
+        } catch (error) {
+            console.error('Failed to add QR code to PDF:', error);
+            doc.setTextColor(220, 38, 38);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Unable to include QR code.', 20, 130);
+            doc.save(`Event_${data.event.title}_Ticket.pdf`);
+            alert('Failed to include QR code in the PDF. The ticket has been downloaded without it.');
         }
 
-
-        // Accessibility: Close modal with Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal.style.display === 'flex') {
-                modal.style.display = 'none';
-            }
-        });
-
-        // Accessibility: Focus on modal when opened
-        modal.addEventListener('transitionend', () => {
-            if (modal.style.display === 'flex') {
-                document.querySelector('.modal-content').focus();
-            }
-        });
+        loadingSpinner.classList.remove('active');
+    } catch (error) {
+        console.error('Failed to generate PDF:', error);
+        loadingSpinner.classList.remove('active');
+        alert('Error: Failed to generate PDF');
+    }
+}
     </script>
 </body>
 </html>
