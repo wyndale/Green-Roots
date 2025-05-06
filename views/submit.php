@@ -4,7 +4,9 @@ require_once '../includes/config.php';
 
 // Session timeout (30 minutes)
 $timeout_duration = 1800;
-if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout_duration) {
+if (!isset($_SESSION['last_activity'])) {
+    $_SESSION['last_activity'] = time(); // Initialize if not set
+} elseif ((time() - $_SESSION['last_activity']) > $timeout_duration) {
     session_unset();
     session_destroy();
     header('Location: login.php?timeout=1');
@@ -62,7 +64,7 @@ try {
 
     // Ensure only regular users can access this page
     if ($user['role'] !== 'user') {
-        header('Location: ../access/access_denied.php');
+        header('Location: ../access/access_denied.php?reason=role_mismatch');
         exit;
     }
 
@@ -106,10 +108,9 @@ try {
     // Fetch planting site for validation
     $planting_site = getPlantingSite($pdo, $barangay_id);
 
+    // If no planting site, set error message without redirect
     if (!$planting_site) {
-        $_SESSION['submission_error'] = 'No planting site designated for your barangay. Please contact an admin.';
-        header('Location: submit.php');
-        exit;
+        $submission_error = 'No planting site designated for your barangay. Please contact an admin.';
     }
 
     // Generate CSRF token
@@ -231,27 +232,29 @@ try {
             $longitude = exif_to_decimal($exif['GPSLongitude'], $exif['GPSLongitudeRef']);
 
             // Validate against planting site using EXIF GPS
-            $distance_to_site = haversine_distance($latitude, $longitude, $planting_site['latitude'], $planting_site['longitude']);
-            if ($distance_to_site > 0.2) { // 200 meters
-                $_SESSION['submission_error'] = 'The photo location is too far from the designated planting site (must be within 200 meters).';
-                // Log suspicious activity
-                $stmt = $pdo->prepare("
-                    INSERT INTO activities (user_id, description, activity_type)
-                    VALUES (:user_id, :description, 'suspicious')
-                ");
-                $stmt->execute([
-                    'user_id' => $user_id,
-                    'description' => "Photo location too far from planting site: $distance_to_site km."
-                ]);
-                header('Location: submit.php');
-                exit;
-            } else {
-                // Check proximity to recent submissions
-                foreach ($recent_locations as $loc) {
-                    $distance = haversine_distance($latitude, $longitude, $loc['latitude'], $loc['longitude']);
-                    if ($distance < 0.1) { // 100 meters
-                        $proximity_note = "Note: This submission is within 100 meters of a previous submission within the last 24 hours.";
-                        break;
+            if ($planting_site) {
+                $distance_to_site = haversine_distance($latitude, $longitude, $planting_site['latitude'], $planting_site['longitude']);
+                if ($distance_to_site > 0.2) { // 200 meters
+                    $_SESSION['submission_error'] = 'The photo location is too far from the designated planting site (must be within 200 meters).';
+                    // Log suspicious activity
+                    $stmt = $pdo->prepare("
+                        INSERT INTO activities (user_id, description, activity_type)
+                        VALUES (:user_id, :description, 'suspicious')
+                    ");
+                    $stmt->execute([
+                        'user_id' => $user_id,
+                        'description' => "Photo location too far from planting site: $distance_to_site km."
+                    ]);
+                    header('Location: submit.php');
+                    exit;
+                } else {
+                    // Check proximity to recent submissions
+                    foreach ($recent_locations as $loc) {
+                        $distance = haversine_distance($latitude, $longitude, $loc['latitude'], $loc['longitude']);
+                        if ($distance < 0.1) { // 100 meters
+                            $proximity_note = "Note: This submission is within 100 meters of a previous submission within the last 24 hours.";
+                            break;
+                        }
                     }
                 }
             }

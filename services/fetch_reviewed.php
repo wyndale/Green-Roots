@@ -2,9 +2,13 @@
 session_start();
 require_once '../includes/config.php';
 
+// Restrict access to eco_validator role only
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'eco_validator') {
-    header('HTTP/1.1 403 Forbidden');
-    echo json_encode(['error' => 'Unauthorized access']);
+    if (isset($_SESSION['user_id']) && ($_SESSION['role'] === 'user' || $_SESSION['role'] === 'admin')) {
+        header('Location: ../access/access_denied.php');
+        exit;
+    }
+    header('Location: ../views/login.php');
     exit;
 }
 
@@ -12,6 +16,7 @@ $user_id = $_SESSION['user_id'];
 try {
     $barangay_id = $_GET['barangay_id'] ?? null;
     $status = $_GET['status'] ?? 'all';
+    $search = $_GET['search'] ?? '';
     if (!$barangay_id) {
         echo json_encode(['error' => 'Barangay ID is required']);
         exit;
@@ -23,6 +28,7 @@ try {
         FROM submissions s
         JOIN users u ON s.user_id = u.user_id
         WHERE s.barangay_id = :barangay_id AND s.status IN ('approved', 'rejected')
+        AND (:search = '' OR u.username LIKE :search OR u.email LIKE :search)
     ";
     if ($status !== 'all') {
         $query .= " AND s.status = :status";
@@ -30,7 +36,10 @@ try {
     $query .= " GROUP BY s.submission_id ORDER BY s.submitted_at DESC";
     
     $stmt = $pdo->prepare($query);
-    $params = [':barangay_id' => $barangay_id];
+    $params = [
+        ':barangay_id' => $barangay_id,
+        ':search' => $search ? "%$search%" : ''
+    ];
     if ($status !== 'all') {
         $params[':status'] = $status;
     }
@@ -59,3 +68,4 @@ try {
     header('HTTP/1.1 500 Internal Server Error');
     echo json_encode(['error' => 'Unexpected error: ' . $e->getMessage()]);
 }
+?>

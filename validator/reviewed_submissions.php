@@ -81,11 +81,6 @@ try {
         $search_query = $_SESSION['search_query_reviewed'];
     }
 
-    // Clear search query on page refresh (if no POST or GET search)
-    if (!isset($_POST['search']) && !isset($_GET['search'])) {
-        unset($_SESSION['search_query_reviewed']);
-    }
-
     // Pagination setup
     $items_per_page = 10;
     $current_page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
@@ -755,8 +750,8 @@ try {
                 </div>
             </div>
             <div class="custom-search-filter">
-                <form method="POST" action="">
-                    <input type="text" name="search" value="<?php echo htmlspecialchars($search_query); ?>" placeholder="Search by username or email">
+                <form method="POST" action="" id="searchForm">
+                    <input type="text" name="search" id="searchField" value="<?php echo htmlspecialchars($search_query); ?>" placeholder="Search by username or email">
                     <button type="submit"><i class="fas fa-search"></i></button>
                 </form>
                 <select id="statusFilter" onchange="updateStatusFilter()">
@@ -899,7 +894,8 @@ try {
         // AJAX for real-time updates
         function updateReviewedTable() {
             const status = document.querySelector('#statusFilter').value;
-            fetch(`../services/fetch_reviewed.php?barangay_id=<?php echo $user['barangay_id']; ?>&status=${status}`)
+            const search = document.querySelector('#searchField').value;
+            fetch(`../services/fetch_reviewed.php?barangay_id=<?php echo $user['barangay_id']; ?>&status=${status}&search=${encodeURIComponent(search)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
@@ -923,7 +919,7 @@ try {
                                 <td>${submission.trees_planted}</td>
                                 <td>${submission.eco_points}</td>
                                 <td>${submission.submission_notes || 'N/A'}</td>
-                                <td class="status">${submission.status}</td>
+                                <td class="status">${submission.status.charAt(0).toUpperCase() + submission.status.slice(1)}</td>
                                 <td>${submission.rejection_reason || 'N/A'}</td>
                                 <td>${submission.flagged ? '<i class="fas fa-flag flag-icon"></i>' : ''}</td>
                             `;
@@ -935,7 +931,7 @@ try {
         }
 
         // Update table every 5 seconds
-        setInterval(updateReviewedTable, 5000);
+        setInterval(updateReviewedTable, 2000);
         // Initial load
         updateReviewedTable();
 
@@ -951,6 +947,12 @@ try {
             document.querySelector('#imageModal').style.display = 'none';
             modalImage.src = '';
         }
+
+        // Sync search input with session
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchField = document.querySelector('#searchField');
+            searchField.value = '<?php echo htmlspecialchars($search_query); ?>';
+        });
     </script>
 </body>
 </html>

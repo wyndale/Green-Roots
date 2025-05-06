@@ -33,12 +33,8 @@ $reward_total = 0;
 $event_total = 0;
 
 try {
-    // Fetch user data including profile picture
-    $stmt = $pdo->prepare("
-        SELECT u.user_id, u.username, u.email, u.profile_picture, u.default_profile_asset_id, u.first_name 
-        FROM users u 
-        WHERE u.user_id = :user_id
-    ");
+    // Fetch user data
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = :user_id");
     $stmt->execute(['user_id' => $user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
