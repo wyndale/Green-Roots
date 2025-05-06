@@ -5,10 +5,12 @@
     // Initialize error message
     $error = '';
 
-    // Check for session-stored error message
+    // Check for session-stored error message or timeout
     if (isset($_SESSION['login_error'])) {
         $error = $_SESSION['login_error'];
         unset($_SESSION['login_error']);
+    } elseif (isset($_GET['timeout']) && $_GET['timeout'] == 1) {
+        $error = 'Your session has timed out. Please log in again.';
     }
 
     // Brute-force protection: Track failed attempts
@@ -61,10 +63,13 @@
                             $_SESSION['user_id'] = $user['user_id'];
                             $_SESSION['username'] = $user['username'];
                             $_SESSION['role'] = $user['role'];
+                            $_SESSION['last_activity'] = time(); // Set last activity time
 
                             // Redirect based on role
-                            if ($user['role'] === 'validator') {
-                                header('Location: validate.php');
+                            if ($user['role'] === 'eco_validator') {
+                                header('Location: ../validator/validator_dashboard.php');
+                            } elseif ($user['role'] === 'admin') {
+                                header('Location: ../admin/admin_dashboard.php');
                             } else {
                                 header('Location: dashboard.php');
                             }

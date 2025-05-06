@@ -48,6 +48,12 @@ try {
         exit;
     }
 
+    // Ensure only regular users can access this page
+    if ($user['role'] !== 'user') {
+        header('Location: ../access/access_denied.php');
+        exit;
+    }
+
     // Fetch profile picture (custom or default)
     if ($user['profile_picture']) {
         $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);

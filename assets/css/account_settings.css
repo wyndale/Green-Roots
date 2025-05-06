@@ -1,0 +1,694 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Arial', sans-serif;
+}
+
+body {
+    background: #f5f7fa;
+    color: #333;
+    overflow-x: hidden;
+}
+
+.container {
+    display: flex;
+    min-height: 100vh;
+    max-width: 1920px;
+    margin: 0 auto;
+}
+
+.sidebar {
+    width: 80px;
+    background: #fff;
+    padding: 17px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 0 20px 20px 0;
+    box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    overflow-y: auto;
+}
+
+.sidebar img.logo {
+    width: 70px;
+    margin-bottom: 20px;
+}
+
+.sidebar a {
+    margin: 18px 0;
+    color: #666;
+    text-decoration: none;
+    font-size: 24px;
+    transition: transform 0.3s, color 0.3s;
+}
+
+.sidebar a:hover {
+    color: #4CAF50;
+    animation: bounce 0.3s ease-out;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+}
+
+.sidebar a.active {
+    color: #4CAF50;
+}
+
+.main-content {
+    flex: 1;
+    padding: 40px;
+    margin-left: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+    width: 100%;
+    position: relative;
+}
+
+.header h1 {
+    font-size: 36px;
+    color: #4CAF50;
+}
+
+.header .notification-search {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header .notification-search .notification {
+    font-size: 24px;
+    color: #666;
+    cursor: pointer;
+    transition: color 0.3s, transform 0.3s;
+}
+
+.header .notification-search .notification:hover {
+    color: #4CAF50;
+    transform: scale(1.1);
+}
+
+.header .notification-search .search-bar {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    padding: 8px 15px;
+    border-radius: 25px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    position: relative;
+    width: 300px;
+}
+
+.header .notification-search .search-bar i {
+    margin-right: 10px;
+    color: #666;
+    font-size: 16px;
+}
+
+.header .notification-search .search-bar input {
+    border: none;
+    outline: none;
+    padding: 5px;
+    width: 90%;
+    font-size: 16px;
+}
+
+.header .notification-search .search-bar .search-results {
+    position: absolute;
+    top: 50px;
+    left: 0;
+    background: #fff;
+    width: 100%;
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    display: none;
+    z-index: 10;
+}
+
+.header .notification-search .search-bar .search-results.active {
+    display: block;
+}
+
+.header .notification-search .search-bar .search-results a {
+    display: block;
+    padding: 12px;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #e0e7ff;
+    font-size: 16px;
+}
+
+.header .notification-search .search-bar .search-results a:hover {
+    background: #e0e7ff;
+}
+
+.header .profile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    cursor: pointer;
+}
+
+.header .profile:hover {
+    opacity: 0.8;
+}
+
+.header .profile img {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.header .profile span {
+    font-size: 18px;
+}
+
+.profile-dropdown {
+    position: absolute;
+    top: 60px;
+    right: 0;
+    background: #fff;
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    display: none;
+    z-index: 10;
+}
+
+.profile-dropdown.active {
+    display: block;
+}
+
+.profile-dropdown .email {
+    padding: 15px 20px;
+    color: #666;
+    font-size: 16px;
+    border-bottom: 1px solid #e0e7ff;
+}
+
+.profile-dropdown a {
+    display: block;
+    padding: 15px 20px;
+    color: #333;
+    text-decoration: none;
+    font-size: 16px;
+}
+
+.profile-dropdown a:hover {
+    background: #e0e7ff;
+}
+
+.account-nav {
+    width: 100%;
+    max-width: 800px;
+    background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+    padding: 10px;
+    display: flex;
+    justify-content: space-around;
+    gap: 10px;
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.account-nav a {
+    color: #666;
+    text-decoration: none;
+    font-size: 16px;
+    padding: 10px 20px;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    flex: 1;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.account-nav a i {
+    color: #666;
+    transition: color 0.3s ease;
+}
+
+.account-nav a.active {
+    background: #BBEBBF;
+    color: #4CAF50;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.account-nav a.active i {
+    color: #4CAF50;
+}
+
+.account-nav a:hover {
+    background: rgba(76, 175, 80, 0.1);
+    color: #4CAF50;
+}
+
+.account-nav a:hover i {
+    color: #4CAF50;
+}
+
+.account-section {
+    background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    width: 100%;
+    max-width: 800px;
+    margin-bottom: 30px;
+    animation: fadeIn 0.5s ease-in;
+}
+
+.account-section h2 {
+    font-size: 28px;
+    color: #2E7D32;
+    margin-bottom: 25px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.account-section h2 i {
+    color: #2E7D32;
+}
+
+.account-section .error {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 12px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 16px;
+}
+
+.account-section .success {
+    background: #d1fae5;
+    color: #10b981;
+    padding: 12px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 16px;
+}
+
+.account-section .form-group {
+    margin-bottom: 25px;
+    position: relative;
+}
+
+.account-section .form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 25px;
+}
+
+.account-section .form-row .form-group {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.account-section label {
+    display: block;
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.account-section label i {
+    color: #4CAF50;
+}
+
+.account-section input[type="text"],
+.account-section input[type="email"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #e0e7ff;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    background: #fff;
+}
+
+.account-section input[readonly] {
+    background: #f5f5f5;
+    cursor: not-allowed;
+}
+
+.account-section input[type="text"]:hover,
+.account-section input[type="email"]:hover {
+    border-color: #4CAF50;
+}
+
+.account-section input[type="text"]:focus,
+.account-section input[type="email"]:focus {
+    border-color: #4CAF50;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+.account-section .field-error {
+    color: #dc2626;
+    font-size: 12px;
+    margin-top: 5px;
+    display: none;
+}
+
+.account-section .field-error.show {
+    display: block;
+}
+
+.account-section .form-group.readonly {
+    position: relative;
+}
+
+.account-section .form-group.readonly .tooltip {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    display: none;
+    z-index: 10;
+}
+
+.account-section .form-group.readonly:hover .tooltip {
+    display: block;
+}
+
+.account-section .button-group {
+    display: flex;
+    gap: 15px;
+}
+
+.account-section input[type="submit"],
+.account-section button {
+    background: #4CAF50;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.1s;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: bold;
+    width: 100%;
+    border-radius: 8px;
+}
+
+.account-section input[type="submit"]:hover,
+.account-section button:hover {
+    background: #388E3C;
+    transform: scale(1.02);
+}
+
+.account-section button.cancel {
+    background: #666;
+    font-weight: bold;
+}
+
+.account-section button.cancel:hover {
+    background: #555;
+}
+
+.error-message {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 12px;
+    border-radius: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 16px;
+    width: 100%;
+    max-width: 800px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile Responsive Design */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-around;
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        border-radius: 15px 15px 0 0;
+        box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
+        padding: 10px 0;
+        z-index: 100;
+    }
+
+    .sidebar img.logo {
+        display: none;
+    }
+
+    .sidebar a {
+        margin: 0 10px;
+        font-size: 18px;
+    }
+
+    .main-content {
+        padding: 20px;
+        padding-bottom: 80px;
+        margin-left: 0;
+    }
+
+    .header {
+        flex-direction: row;
+        align-items: center;
+        gap: 15px;
+        width: 100%;
+    }
+
+    .header h1 {
+        font-size: 24px;
+    }
+
+    .header .notification-search {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        width: auto;
+        flex-grow: 1;
+    }
+
+    .header .notification-search .notification {
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+
+    .header .notification-search .search-bar {
+        width: 100%;
+        max-width: 200px;
+        padding: 5px 10px;
+        flex-grow: 1;
+    }
+
+    .header .notification-search .search-bar i {
+        font-size: 14px;
+        margin-right: 5px;
+    }
+
+    .header .notification-search .search-bar input {
+        font-size: 14px;
+    }
+
+    .header .notification-search .search-bar .search-results {
+        top: 40px;
+    }
+
+    .header .profile {
+        margin-top: 0;
+        flex-shrink: 0;
+    }
+
+    .header .profile img {
+        width: 40px;
+        height: 40px;
+    }
+
+    .header .profile span {
+        font-size: 16px;
+        display: none; /* Hide the name to save space */
+    }
+
+    .profile-dropdown {
+        top: 50px;
+        width: 200px;
+        right: 0;
+    }
+
+    .account-nav {
+        flex-direction: column;
+        padding: 5px;
+        gap: 5px;
+    }
+
+    .account-nav a {
+        padding: 8px 10px;
+        font-size: 14px;
+    }
+
+    .account-nav a i {
+        font-size: 14px;
+    }
+
+    .account-section {
+        padding: 20px;
+    }
+
+    .account-section h2 {
+        font-size: 24px;
+    }
+
+    .account-section label {
+        font-size: 14px;
+    }
+
+    .account-section input[type="text"],
+    .account-section input[type="email"] {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    .account-section .field-error {
+        font-size: 10px;
+    }
+
+    .account-section .form-group.readonly .tooltip {
+        font-size: 10px;
+        top: -25px;
+    }
+
+    .account-section input[type="submit"],
+    .account-section button {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    .account-section .form-row {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .account-section .button-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .error-message {
+        font-size: 14px;
+    }
+}
+
+/* Additional media query for very small screens */
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 20px;
+    }
+
+    .header .notification-search {
+        gap: 5px;
+    }
+
+    .header .notification-search .notification {
+        font-size: 18px;
+    }
+
+    .header .notification-search .search-bar {
+        max-width: 150px;
+        padding: 4px 8px;
+    }
+
+    .header .notification-search .search-bar i {
+        font-size: 12px;
+        margin-right: 4px;
+    }
+
+    .header .notification-search .search-bar input {
+        font-size: 12px;
+    }
+
+    .header .profile img {
+        width: 35px;
+        height: 35px;
+    }
+
+    .account-section {
+        padding: 15px;
+    }
+
+    .account-section h2 {
+        font-size: 20px;
+    }
+
+    .account-nav a {
+        font-size: 12px;
+        padding: 6px 8px;
+    }
+
+    .account-nav a i {
+        font-size: 12px;
+    }
+
+    .account-section label {
+        font-size: 12px;
+    }
+
+    .account-section input[type="text"],
+    .account-section input[type="email"] {
+        font-size: 12px;
+        padding: 8px;
+    }
+
+    .account-section .field-error {
+        font-size: 10px;
+    }
+
+    .account-section .form-group.readonly .tooltip {
+        font-size: 10px;
+    }
+
+    .account-section input[type="submit"],
+    .account-section button {
+        font-size: 12px;
+        padding: 8px;
+    }
+
+    .error-message {
+        font-size: 12px;
+    }
+}

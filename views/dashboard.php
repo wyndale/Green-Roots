@@ -28,6 +28,12 @@ try {
         exit;
     }
 
+    // Ensure only regular users can access this page
+    if ($user['role'] !== 'user') {
+        header('Location: ../access/access_denied.php');
+        exit;
+    }
+
     // Fetch profile picture (custom or default)
     if ($user['profile_picture']) {
         $profile_picture_data = 'data:image/jpeg;base64,' . base64_encode($user['profile_picture']);
@@ -35,7 +41,7 @@ try {
         $stmt = $pdo->prepare("SELECT asset_data, asset_type FROM assets WHERE asset_id = :asset_id");
         $stmt->execute(['asset_id' => $user['default_profile_asset_id']]);
         $asset = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         if ($asset && $asset['asset_data']) {
             $mime_type = 'image/jpeg'; // Default
             if ($asset['asset_type'] === 'default_profile') {
@@ -107,6 +113,7 @@ try {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -116,6 +123,7 @@ try {
     <link rel="stylesheet" href="../assets/css/dashboard.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
     <div class="container">
         <div class="sidebar">
@@ -171,7 +179,8 @@ try {
                         CO₂ Offset
                         <span class="info-icon">
                             <i class="fas fa-info-circle"></i>
-                            <span class="tooltip">CO₂ Offset = The amount of pollution your trees have helped remove from the air!</span>
+                            <span class="tooltip">CO₂ Offset = The amount of pollution your trees have helped remove
+                                from the air!</span>
                         </span>
                     </h3>
                     <canvas id="co2Chart"></canvas>
@@ -187,13 +196,14 @@ try {
                     <h3>Upcoming Events</h3>
                     <ul>
                         <?php if (empty($events)): ?>
-                            <li>No upcoming events in your region <?php echo htmlspecialchars($user['region_name'] ?? 'N/A'); ?></li>
+                            <li>No upcoming events in your region
+                                <?php echo htmlspecialchars($user['region_name'] ?? 'N/A'); ?></li>
                         <?php else: ?>
                             <?php foreach ($events as $event): ?>
                                 <li>
                                     <i class="fas fa-calendar-check"></i>
-                                    <?php echo htmlspecialchars($event['title']); ?> - 
-                                    <?php echo date('M d', strtotime($event['event_date'])); ?> at 
+                                    <?php echo htmlspecialchars($event['title']); ?> -
+                                    <?php echo date('M d', strtotime($event['event_date'])); ?> at
                                     <?php echo htmlspecialchars($event['location']); ?>
                                 </li>
                             <?php endforeach; ?>
@@ -222,13 +232,13 @@ try {
         const searchInput = document.querySelector('#searchInput');
         const searchResults = document.querySelector('#searchResults');
 
-        searchInput.addEventListener('input', function(e) {
+        searchInput.addEventListener('input', function (e) {
             const query = e.target.value.toLowerCase();
             searchResults.innerHTML = '';
             searchResults.classList.remove('active');
 
             if (query.length > 0) {
-                const matches = functionalities.filter(func => 
+                const matches = functionalities.filter(func =>
                     func.name.toLowerCase().startsWith(query)
                 );
 
@@ -244,7 +254,7 @@ try {
             }
         });
 
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', function (e) {
             if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
                 searchResults.classList.remove('active');
             }
@@ -254,11 +264,11 @@ try {
         const profileBtn = document.querySelector('#profileBtn');
         const profileDropdown = document.querySelector('#profileDropdown');
 
-        profileBtn.addEventListener('click', function() {
+        profileBtn.addEventListener('click', function () {
             profileDropdown.classList.toggle('active');
         });
 
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', function (e) {
             if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
                 profileDropdown.classList.remove('active');
             }
@@ -296,4 +306,5 @@ try {
         });
     </script>
 </body>
+
 </html>

@@ -57,6 +57,12 @@ try {
         exit;
     }
 
+    // Ensure only regular users can access this page
+    if ($user['role'] !== 'user') {
+        header('Location: ../access/access_denied.php');
+        exit;
+    }
+
     $eco_points = $user['eco_points'];
     $paypal_email = $user['paypal_email'];
 
@@ -527,6 +533,7 @@ if (isset($_GET['error']) && isset($_SESSION['error_message'])) {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -535,6 +542,7 @@ if (isset($_GET['error']) && isset($_SESSION['error_message'])) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../assets/css/rewards.css">
 </head>
+
 <body>
     <div class="container">
         <div class="sidebar">
@@ -1222,4 +1230,5 @@ if (isset($_GET['error']) && isset($_SESSION['error_message'])) {
         }
     </script>
 </body>
+
 </html>

@@ -30,6 +30,12 @@ try {
         exit;
     }
 
+    // Ensure only regular users can access this page
+    if ($user['role'] !== 'user') {
+        header('Location: ../access/access_denied.php');
+        exit;
+    }
+
     // Now that $user is defined, we can safely use it
     $filter_region = $user['region_name']; // Fixed to user's region
 
