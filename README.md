@@ -14,8 +14,6 @@ Green Roots is a web application designed to encourage tree planting and promote
 - [Tools Used](#tools-used)
 - [How to Install](#how-to-install)
 - [How to Use](#how-to-use)
-- [How to Contribute](#how-to-contribute)
-- [License](#license)
 - [Architecture](#architecture)
 - [File Functionalities](#file-functionalities)
   - [User Functionalities](#user-functionalities)
@@ -340,14 +338,6 @@ The app uses a MySQL database to store data. Each table serves a specific purpos
 - **Logout**: End session via the profile dropdown.
 - **Validator Actions**: Review submissions on the validator dashboard (use with caution due to potential bugs).
 - **Admin Actions**: Manage users, events, and rankings via the partial admin dashboard (limited functionality).
-
-## How to Contribute
-
-Clone the repository, make changes in VS Code, test with XAMPP, and submit a pull request on GitHub.
-
-## License
-
-[Pending; check project files for license details.]
 
 ## Architecture
 
