@@ -245,7 +245,6 @@
             font-size: 14px;
             color: #666;
             letter-spacing: 0.4px;
-            background: #fff;
             padding: 0 5px;
             pointer-events: none;
             transition: all 0.2s ease;
@@ -264,6 +263,7 @@
             transform: translateY(-50%);
             font-size: 12px;
             color: #4CAF50;
+            background: #fff;
         }
 
         .login-container input[type="submit"] {

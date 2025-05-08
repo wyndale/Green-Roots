@@ -6,6 +6,9 @@ Green Roots is a web application designed to encourage tree planting and promote
 
 - [Features](#features)
 - [How Features Work](#how-features-work)
+  - [User Features](#user-features)
+  - [Validator Features](#validator-features)
+  - [Admin Features](#admin-features)
 - [Folder Structure](#folder-structure)
 - [Database Setup](#database-setup)
 - [Tools Used](#tools-used)
@@ -15,37 +18,44 @@ Green Roots is a web application designed to encourage tree planting and promote
 - [License](#license)
 - [Architecture](#architecture)
 - [File Functionalities](#file-functionalities)
+  - [User Functionalities](#user-functionalities)
+  - [Validator Functionalities](#validator-functionalities)
+  - [Admin Functionalities](#admin-functionalities)
 - [Security Features](#security-features)
 
 ## Features
 
-- **Secure Login and Sign-Up**: Create an account or log in safely. Validator roles require a separate application with the website owner.
+- **Secure Login and Sign-Up**: Create an account or log in safely. Validator and admin roles require a separate application with the website owner.
 - **Tree Planting Records**: Submit details and photos of tree planting efforts for review to ensure authenticity.
 - **Designated Planting Site Information**: View specific locations for planting trees in your community.
 - **Community Events**: Browse, filter, and join group tree planting events in your region, with QR code tickets for attendance verification and downloadable PDF passes.
 - **Rewards**: Earn points for planting trees and redeem them for vouchers or cash via PayPal.
 - **Rankings**: Compare your community's tree planting efforts through a leaderboard, fostering competition.
 - **Activity Tracker**: Log actions like submissions, event participation, reward redemptions, and feedback submissions to track progress.
-- **Feedback**: Submit feedback (bug reports, feature requests, general comments) with ratings and anonymity options, and view feedback history with admin responses.
+- **Feedback**: Submit feedback (bug reports, feature requests, general comments) with ratings and anonymity options, and view their feedback history with admin responses.
 - **Account Settings**: Update personal details (username, email, phone, name) securely, with read-only location fields set during registration.
 - **Profile**: Upload or remove a profile picture to personalize your account, with support for JPEG, PNG, and GIF formats.
 - **Password & Security**: Change your password securely with validation for strength and confirmation.
 - **Payment Methods (Prototype)**: Add or remove a PayPal email for reward withdrawals, with validation for email format.
 - **Logout**: Securely end your session and return to the landing page.
+- **Validator Features**: Allow validators to review tree planting submissions, update statuses, and manage points (note: this feature may contain bugs due to the nearing deadline and limited time for testing).
+- **Admin Features**: Provide admins with full access to manage users, events, rankings, and other aspects of the platform (note: this feature is only partially implemented, with other functions not completed due to time constraints).
 
 ## How Features Work
 
 Detailed explanations of each feature, written for all audiences, describing the behind-the-scenes mechanics.
 
-### Secure Login and Sign-Up
+### User Features
 
-**What It Does**: Allows users to create or access accounts securely, protecting personal information. Validator roles require direct application to the website owner.
+#### Secure Login and Sign-Up
+
+**What It Does**: Allows users to create or access accounts securely, protecting personal information. Validator and admin roles require direct application to the website owner.
 
 **How It Works**:
 - **Login**: Verifies username and password against a secure database with encrypted passwords. Limits login attempts (5 within 5 minutes) and uses CSRF tokens.
-- **Sign-Up**: Users provide name, email, password, and location (barangay, city, province, region, country), which are encrypted and stored. Unique usernames/emails are enforced. Validator applications are handled separately.
+- **Sign-Up**: Users provide name, email, password, and location (barangay, city, province, region, country), which are encrypted and stored. Unique usernames/emails are enforced. Validator and admin applications are handled separately.
 
-### Tree Planting Records
+#### Tree Planting Records
 
 **What It Does**: Enables users to submit proof of tree planting, including photos and details, for verification.
 
@@ -54,7 +64,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - Photos are validated for format (JPG/PNG), size (<10MB), resolution (≥800x600 pixels), and location data. A hash prevents duplicates.
 - Validators review submissions, updating points, tree counts, and rankings upon approval.
 
-### Designated Planting Site Information
+#### Designated Planting Site Information
 
 **What It Does**: Displays community-specific planting locations to aid planning.
 
@@ -62,7 +72,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - Retrieves planting site coordinates for the user’s barangay from the database, displayed with an Open Street Map link.
 - Prompts users to contact admins if no site is assigned, ensuring designated planting areas.
 
-### Community Events
+#### Community Events
 
 **What It Does**: Facilitates participation in group tree planting events, allowing users to browse, filter, join, and verify attendance with QR code tickets and downloadable PDF passes.
 
@@ -76,7 +86,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Event Status**: Events are marked as “Upcoming,” “Ongoing,” or “Past” based on the event date compared to the current date, with visual indicators (e.g., colored badges).
 - **Database Integration**: Events are stored in the `events` table, with participation tracked in `event_participants`. Activities are logged in `activities`, and history is displayed via `history.php`.
 
-### Rewards
+#### Rewards
 
 **What It Does**: Users earn points for tree planting and redeem them for vouchers or cash via PayPal.
 
@@ -87,7 +97,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Voucher Management**: Expired vouchers are removed, and users view redeemed vouchers with QR codes and PDF download options.
 - **PDF Generation**: Users download an “EcoVoucher Pass” PDF with voucher details and QR code.
 
-### Rankings
+#### Rankings
 
 **What It Does**: Displays community and individual rankings based on trees planted.
 
@@ -97,7 +107,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Broader Rankings**: Province and region rankings are calculated and displayed in modals with search functionality.
 - **Leaderboard Page**: Shows user, barangay, province, and region ranks with real-time updates.
 
-### Activity Tracker
+#### Activity Tracker
 
 **What It Does**: Logs user actions (submissions, events, rewards, feedback) for progress tracking.
 
@@ -105,7 +115,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - Actions are logged in the `activities` table with details (e.g., date, type, event title, feedback submission).
 - The “History” page displays activities in tabs (Planting, Events, Rewards) with date filters and pagination, showing statuses like “Confirmed” for events or “Submitted” for feedback.
 
-### Feedback
+#### Feedback
 
 **What It Does**: Allows users to submit feedback (bug reports, feature requests, general comments) with ratings and anonymity options, and view their feedback history with admin responses.
 
@@ -117,7 +127,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **UI Elements**: Features a responsive form with tooltips (e.g., for rating and anonymity), a modal for success/error messages (e.g., “Feedback submitted!” or “Submit only once every 24 hours”), and status badges (e.g., yellow for Submitted, blue for Under Review, green for Resolved). Includes sidebar, search bar, and profile dropdown.
 - **Error Handling**: Handles invalid inputs (e.g., missing comments), database errors, and session-based error messages. Form inputs are preserved on errors for user convenience.
 
-### Account Settings
+#### Account Settings
 
 **What It Does**: Enables users to update personal details (username, email, phone number, first/last name) securely, with read-only location fields set during registration.
 
@@ -129,7 +139,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Error Handling**: Displays field-specific errors (e.g., “Invalid email format”) and general errors (e.g., “Username already taken”). Form inputs are preserved on errors via session storage. Handles database errors gracefully.
 - **Security**: Uses PDO prepared statements to prevent SQL injection and sanitizes inputs (e.g., email via `FILTER_SANITIZE_EMAIL`).
 
-### Profile
+#### Profile
 
 **What It Does**: Allows users to upload a new profile picture or remove the existing one to personalize their account.
 
@@ -138,11 +148,11 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Validation**: Validates file type (JPEG, PNG, GIF) and size (<20MB). Invalid files trigger session-based error messages (e.g., “Only JPEG, PNG, and GIF files are allowed”).
 - **Database Storage**: Valid images are stored as binary data in the `users` table’s `profile_picture` column (blob) using PDO’s `PARAM_LOB`. If no custom picture exists, a default image is fetched from the `assets` table via `default_profile_asset_id` or a static fallback (`default_profile.jpg`).
 - **Removing Profile Picture**: Users can remove their custom picture, setting `profile_picture` to NULL and reverting to the default image.
-- **UI Elements**: Features a responsive form with a file input, live preview, and buttons for uploading, canceling, or removing the pictureسلام . Includes sidebar, search bar, profile dropdown, and navigation tabs (Account Settings, Profile, Password & Security, Payment Methods). Success/error messages (e.g., “Profile picture updated successfully!”) are displayed.
+- **UI Elements**: Features a responsive form with a file input, live preview, and buttons for uploading, canceling, or removing the picture. Includes sidebar, search bar, profile dropdown, and navigation tabs (Account Settings, Profile, Password & Security, Payment Methods). Success/error messages (e.g., “Profile picture updated successfully!”) are displayed.
 - **Error Handling**: Manages file reading errors, database errors, and session-based messages. Preserves form state on errors.
 - **Security**: Uses PDO prepared statements for database updates and validates file types to prevent malicious uploads.
 
-### Password & Security
+#### Password & Security
 
 **What It Does**: Allows users to change their password securely with validation for strength and confirmation.
 
@@ -154,7 +164,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Error Handling**: Displays errors for incorrect current password, weak new password, or mismatch between new and confirm passwords. Preserves form inputs on errors via session storage. Handles database errors gracefully.
 - **Security**: Uses PDO prepared statements to prevent SQL injection, hashes passwords with `password_hash()`, and verifies current password with `password_verify()`.
 
-### Payment Methods (Prototype)
+#### Payment Methods (Prototype)
 
 **What It Does**: Allows users to add or remove a PayPal email for reward withdrawals (currently a prototype with limited functionality).
 
@@ -168,7 +178,7 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **Security**: Uses PDO prepared statements to prevent SQL injection and sanitizes email inputs.
 - **Prototype Note**: This feature is under development, currently supporting only PayPal email management. Future enhancements may include additional payment methods or integration with PayPal’s API.
 
-### Logout
+#### Logout
 
 **What It Does**: Securely ends the user’s session and redirects to the landing page.
 
@@ -178,319 +188,115 @@ Detailed explanations of each feature, written for all audiences, describing the
 - **UI Elements**: Accessible via the profile dropdown menu on all authenticated pages (e.g., Dashboard, Profile, Payment Methods).
 - **Security**: Ensures no residual session data remains, preventing unauthorized access post-logout.
 
+### Validator Features
+
+#### Validator Dashboard
+
+**What It Does**: Provides validators with an overview of their assigned barangay, user statistics, submission statuses, and a snapshot of the most recent submission.
+
+**How It Works**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role (e.g., user or admin).
+- **Data Fetching**: Retrieves validator details (username, email, profile picture, barangay) from the `users` and `barangays` tables, and stats (user count, pending/approved/flagged submissions) for the assigned barangay.
+- **Profile Picture Handling**: Displays the validator’s profile picture, either from the `profile_picture` blob in the `users` table, a default asset from the `assets` table, or a static fallback (`default_profile.jpg`).
+- **Statistics Display**: Shows the number of users in the barangay, pending submissions (status: "pending"), approved submissions (status: "approved"), and flagged submissions (flagged: 1).
+- **Recent Submission**: Displays the most recent submission in the barangay, including submission ID, user’s first name, trees planted, photo (if available), latitude/longitude, submission date, and status.
+- **Navigation**: Provides sidebar links to the dashboard (`validator_dashboard.php`), pending reviews (`pending_reviews.php`), reviewed submissions (`reviewed_submissions.php`), and barangay planting site (`barangay_designated_site.php`).
+- **Search Functionality**: Allows searching for pages (e.g., Dashboard, Pending Reviews) via a search bar with autocomplete suggestions, redirecting to the selected page.
+- **UI Elements**: Features a responsive layout with a sidebar, header (with search bar and profile dropdown), stat boxes for submissions, and a table for the recent submission. Includes hover effects, tooltips, and mobile responsiveness.
+- **Error Handling**: Displays database errors in a styled error message box if queries fail.
+
+#### Pending Reviews
+
+**What It Does**: Allows validators to review pending tree planting submissions, approve or reject them, and optionally flag them for further review.
+
+**How It Works**:
+- **Authentication and Authorization**: Accessible only to users with the `eco_validator` role. Unauthorized users are redirected to `login.php` or `access_denied.php` if they have a different role.
+- **Fetching Submissions**: Retrieves pending submissions (`status='pending'`) for the validator’s assigned barangay from the `submissions` table, joined with `users` for submitter details (username, email). Supports pagination (11 items per page) and ordering by submission date (newest first).
+- **Search Functionality**: Allows searching submissions by username or email, persisting the search query across pages using session storage (`$_SESSION['validator_search']`) and URL parameters. Uses the PRG (Post-Redirect-Get) pattern to handle form submissions.
+- **Eco Points Calculation**: Calculates eco points for each submission based on trees planted: base points (50 per tree), a 20% fairness buffer (1.2 multiplier), and a 10% reward multiplier (1.1), rounded to the nearest integer.
+- **Submission Review**:
+  - Displays submissions in a table with columns: Submission ID, Submitter (username), Submitted At (formatted date), Location (latitude/longitude with OpenStreetMap link), Photo (clickable to enlarge), Trees Planted, Eco Points, Notes, Status, Flag (icon if flagged), and Actions (button to approve/reject).
+  - Validators can click an "Actions" button to open a modal showing submission details (ID, trees planted, eco points) with options to approve or reject.
+  - **Approve**: Updates the submission status to "approved" in the `submissions` table, adds eco points and trees planted to the user’s record in the `users` table, and disables further actions on the submission in the UI.
+  - **Reject**: Opens a second modal to input a rejection reason (required), then updates the submission status to "rejected" with the reason in the `submissions` table.
+  - Both actions record the validator’s ID (`validated_by`) and timestamp (`validated_at`) in the `submissions` table.
+- **Flagging**: Displays a flag icon if a submission is flagged (`flagged=1`), but flagging functionality is not implemented in this page (handled elsewhere).
+- **UI Elements**: Features a responsive table with hover effects, clickable photos to enlarge in a modal, and pagination links. Includes a sidebar with navigation (Dashboard, Pending Reviews, Reviewed Submissions, Barangay Map), a header with a search bar (for page navigation), and a profile dropdown (Account, Logout).
+- **Error Handling**: Catches PDO and general exceptions, displaying errors in a styled error message box. Handles empty results with a “No pending submissions available” message.
+- **Database Updates**: Uses the `update_submission.php` service via a fetch API call to update submission status and user data within a transaction, ensuring data consistency.
+
+#### Reviewed Submissions
+
+**What It Does**: Displays a history of reviewed tree planting submissions (approved or rejected) for the validator’s assigned barangay, allowing validators to view past decisions and monitor flagged submissions.
+
+**How It Works**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role.
+- **Data Fetching**: Retrieves approved (`status='approved'`) and rejected (`status='rejected'`) submissions for the validator’s barangay from the `submissions` table, joined with `users` for submitter details (username, email). Supports pagination (10 items per page) and ordering by submission date (newest first).
+- **Search and Filter Functionality**:
+  - Allows searching submissions by username or email, persisting the query across pages using session storage (`$_SESSION['search_query_reviewed']`) and URL parameters. Uses the PRG pattern for form submissions.
+  - Provides a status filter (`all`, `approved`, `rejected`) via a dropdown, updating the page URL with the selected value.
+- **Eco Points Calculation**: Calculates eco points for each submission: base points (50 per tree), a 20% fairness buffer (1.2 multiplier), and a 10% reward multiplier (1.1), rounded to the nearest integer.
+- **Real-Time Updates**: Implements AJAX polling every 2 seconds to fetch updated submission data from the `fetch_reviewed.php` service, refreshing the table dynamically without page reloads.
+- **Display**:
+  - Shows submissions in a table with columns: Submission ID, Submitter (username), Submitted At (formatted date), Location (latitude/longitude with OpenStreetMap link), Photo (clickable to enlarge), Trees Planted, Eco Points, Notes, Status, Rejection Reason (if applicable), and Flag (icon if flagged).
+  - Photos are displayed as thumbnails, clickable to enlarge in a modal. Missing photos show "No Photo".
+  - Location links open in OpenStreetMap in a new tab.
+- **Pagination**: Supports navigation through multiple pages with "Previous" and "Next" links, dynamically adjusting based on total items and current page.
+- **UI Elements**: Features a responsive table with hover effects, a custom search bar and status filter, a sidebar with navigation (Dashboard, Pending Reviews, Reviewed Submissions, Barangay Map), a header with a page search bar and profile dropdown (Account, Logout), and an image modal for photo enlargement. Includes accessibility focus states and mobile responsiveness.
+- **Error Handling**: Displays PDO or general exceptions in a styled error message box. Handles empty results with a “No reviewed submissions available” message.
+- **Dependencies**: Relies on the `fetch_reviewed.php` service for real-time data and uses Font Awesome for icons.
+
+#### Barangay Designated Site
+
+**What It Does**: Displays the designated planting site for the validator’s assigned barangay, providing a map view and real-time updates.
+
+**How It Works**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role. Includes an additional check to redirect non-validator users to their respective dashboards (e.g., `dashboard.php` for users, `admin_dashboard.php` for admins).
+- **Data Fetching**: Retrieves the validator’s barangay ID and details from the `users` and `barangays` tables. Fetches the latest planting site coordinates (latitude, longitude) and update timestamp from the `planting_sites` table, joined with `barangays` for the barangay name, using a function (`getPlantingSite`) that orders by `updated_at` DESC and limits to 1 record.
+- **Profile Picture Handling**: Displays the validator’s profile picture, either from the `profile_picture` blob in the `users` table, a default asset from the `assets` table (with MIME type detection for PNG or JPEG), or a static fallback (`default_profile.jpg`).
+- **Asset Fetching**: Loads favicon and logo data from the `assets` table (type `favicon` and `logo`) as base64-encoded images, with fallbacks to static files (`favicon.png` and `logo.png`) if no data is found.
+- **Display**:
+  - Shows a card with details: barangay name, latitude, longitude, and last updated timestamp. If no planting site exists, displays an error message prompting the validator to contact an admin.
+  - Includes a link to view the site on OpenStreetMap in a new tab.
+  - Embeds an interactive Leaflet map with a custom marker (icon from a CDN) at the planting site coordinates, with a popup displaying the barangay name.
+- **Real-Time Updates**: Uses AJAX polling every 5 seconds to fetch updated planting site data from the `fetch_designated_site.php` service, refreshing the card details and map view dynamically. Updates the map marker and view center based on new coordinates.
+- **UI Elements**: Features a responsive layout with a sidebar (links to Dashboard, Pending Reviews, Reviewed Submissions, Barangay Map), a header with a search bar (for page navigation) and profile dropdown (Account, Logout), a styled planting site card with animations, and a map container. Includes hover effects, accessibility focus states, and mobile responsiveness (e.g., sidebar moves to bottom, map height adjusts).
+- **Error Handling**: Catches PDO exceptions, logging them to the error log and displaying a styled error message. Handles cases where no planting site data is available with a user-friendly message.
+- **Dependencies**: Relies on the `fetch_designated_site.php` service for real-time data and uses Leaflet.js for mapping, with a custom icon from a CDN.
+
+#### Barangay Designated Site Service
+
+**What It Does**: Provides real-time planting site data for the `barangay_designated_site.php` page via AJAX requests.
+
+**How It Works**:
+- **Authentication and Authorization**: Checks for a valid session with a `user_id`, returning a 403 Forbidden response with a JSON error if unauthorized.
+- **Input Handling**: Accepts a `barangay_id` GET parameter; returns a JSON error if missing.
+- **Data Fetching**: Queries the `planting_sites` table, joined with `barangays`, to retrieve the latest planting site data (latitude, longitude, updated_at, barangay name) for the specified barangay, ordered by `updated_at` DESC and limited to 1 record.
+- **Response**: Returns a JSON object with the planting site data or an error message if no data is found or the query fails.
+- **Error Handling**: Catches PDO and general exceptions, returning a 500 Internal Server Error status with a JSON error message including the exception details.
+- **Security**: Ensures session validation to prevent unauthorized access to site data.
+
+### Admin Features
+
+**What It Does**: Admins should have full access to the system to manage users, events, rankings, and other aspects of the platform.
+
+**How It Works**:
+- **Note**: Admin functionalities are still not fully implemented. Currently, only partial features exist, such as basic user and event management. Full implementation is pending due to time constraints.
+
 ## Folder Structure
 
 - `index.php`: Homepage with login/signup links.
 - `views/`: Page templates (e.g., `login.php`, `events.php`, `feedback.php`, `account_settings.php`, `profile.php`, `password_security.php`, `payment_methods.php`, `logout.php`).
-- `services/`: Backend logic (e.g., `get_locations.php`).
+- `services/`: Backend logic (e.g., `get_locations.php`, `update_submission.php`, `fetch_reviewed.php`, `fetch_designated_site.php`).
 - `assets/`: Styles, scripts, images.
 - `includes/config.php`: Database connection configuration.
+- `database/`: Contains exported SQL files for setting up the database tables.
+- `validator/`: Validator-specific pages (e.g., `barangay_designated_site.php`, `pending_reviews.php`, `reviewed_submissions.php`, `validator_dashboard.php`).
+- `admin/`: Admin-specific pages (e.g., `admin_dashboard.php`, `manage_planting_sites.php`, `manage_validators.php`, `upload_assets.php`).
 
 ## Database Setup
 
-The app uses a MySQL database to store data. Each table serves a specific purpose, and they link together for smooth operation. Below are the corrected and updated table schemas with proper indexing.
-
-### Sections and What They Store
-
-- **Communities (`barangays`)**: Stores location details (village, city, province, region, country).
-- **Users**: Stores user info (username, password, email, role, barangay, points, trees planted, etc.).
-- **Submissions**: Records tree planting submissions (trees planted, photo, location, status).
-- **Events**: Stores event details (title, date, location, barangay, capacity).
-- **Event Attendees (`event_participants`)**: Tracks event sign-ups with verification details.
-- **Activities**: Logs user actions (submission, validation, event, reward, feedback).
-- **Rankings**: Stores community rankings based on trees planted.
-- **Planting Locations (`planting_sites`)**: Records planting site coordinates.
-- **Feedback**: Stores user feedback (category, rating, status).
-- **Vouchers**: Stores voucher details (name, points cost, image, partner, expiry).
-- **Voucher Claims (`voucher_claims`)**: Tracks redeemed vouchers (code, QR code, status).
-- **Assets**: Stores binary assets like profile pictures, favicon, and logo.
-
-### Detailed Setup with Code
-
-Below is the SQL code to create the database tables, executable in phpMyAdmin (included with XAMPP).
-
-#### Communities
-
-Stores location details for organizing planting activities.
-
-```sql
-CREATE TABLE barangays (
-    barangay_id INT NOT NULL AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL,
-    city VARCHAR(100) NOT NULL,
-    province VARCHAR(100) NOT NULL,
-    region VARCHAR(100) NOT NULL,
-    country VARCHAR(100) NOT NULL,
-    PRIMARY KEY (barangay_id),
-    INDEX idx_barangay_location (region, province, city, name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Users
-
-Stores user information with updated schema based on the provided image.
-
-```sql
-CREATE TABLE users (
-    user_id INT NOT NULL AUTO_INCREMENT,
-    username VARCHAR(50) NOT NULL,
-    email VARCHAR(100) NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    barangay_id INT NOT NULL,
-    role ENUM('user', 'admin', 'eco_validator') NOT NULL DEFAULT 'user',
-    eco_points INT DEFAULT 0,
-    trees_planted INT DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    phone_number VARCHAR(15) DEFAULT NULL,
-    first_name VARCHAR(100) DEFAULT NULL,
-    last_name VARCHAR(100) DEFAULT NULL,
-    profile_picture LONGBLOB DEFAULT NULL,
-    paypal_email VARCHAR(255) DEFAULT NULL,
-    default_profile_asset_id INT DEFAULT NULL,
-    PRIMARY KEY (user_id),
-    UNIQUE KEY idx_username (username),
-    UNIQUE KEY idx_email (email),
-    INDEX idx_barangay_id (barangay_id),
-    INDEX idx_eco_points (eco_points),
-    INDEX idx_trees_planted (trees_planted),
-    FOREIGN KEY (barangay_id) REFERENCES barangays(barangay_id),
-    FOREIGN KEY (default_profile_asset_id) REFERENCES assets(asset_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Submissions
-
-Tracks tree planting submissions with corrected schema.
-
-```sql
-CREATE TABLE submissions (
-    submission_id INT NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    barangay_id INT NOT NULL,
-    trees_planted INT NOT NULL,
-    photo_data LONGBLOB DEFAULT NULL,
-    photo_timestamp DATETIME DEFAULT NULL,
-    photo_hash VARCHAR(64) DEFAULT NULL,
-    latitude DECIMAL(10,8) DEFAULT NULL,
-    longitude DECIMAL(11,8) DEFAULT NULL,
-    location_accuracy DECIMAL(10,2) DEFAULT NULL,
-    device_location_timestamp TIMESTAMP DEFAULT NULL,
-    device_id VARCHAR(100) DEFAULT NULL,
-    ip_address VARCHAR(45) DEFAULT NULL,
-    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
-    submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    validated_by INT DEFAULT NULL,
-    validated_at TIMESTAMP DEFAULT NULL,
-    planting_site_id INT DEFAULT NULL,
-    device_info TEXT DEFAULT NULL,
-    submission_notes TEXT NULL,
-    assigned_validator_id INT DEFAULT NULL,
-    flagged TINYINT(1) DEFAULT 0,
-    rejection_reason VARCHAR(255) DEFAULT NULL,
-    PRIMARY KEY (submission_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_barangay_id (barangay_id),
-    INDEX idx_status (status),
-    INDEX idx_submitted_at (submitted_at),
-    INDEX idx_photo_hash (photo_hash),
-    INDEX idx_validated_by (validated_by),
-    FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (barangay_id) REFERENCES barangays(barangay_id),
-    FOREIGN KEY (validated_by) REFERENCES users(user_id),
-    FOREIGN KEY (planting_site_id) REFERENCES planting_sites(planting_site_id),
-    FOREIGN KEY (assigned_validator_id) REFERENCES users(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Events
-
-Stores event details with added location attribute.
-
-```sql
-CREATE TABLE events (
-    event_id INT NOT NULL AUTO_INCREMENT,
-    title VARCHAR(100) NOT NULL,
-    description TEXT DEFAULT NULL,
-    event_date DATE NOT NULL,
-    location VARCHAR(255) NOT NULL,
-    barangay_id INT DEFAULT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    capacity INT DEFAULT NULL,
-    PRIMARY KEY (event_id),
-    INDEX idx_barangay_id (barangay_id),
-    INDEX idx_event_date (event_date),
-    FOREIGN KEY (barangay_id) REFERENCES barangays(barangay_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Event Attendees
-
-Tracks event participation with proper indexing.
-
-```sql
-CREATE TABLE event_participants (
-    event_id INT NOT NULL,
-    user_id INT NOT NULL,
-    joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    qr_code VARCHAR(255) DEFAULT NULL,
-    confirmed_at TIMESTAMP DEFAULT NULL,
-    PRIMARY KEY (event_id, user_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_joined_at (joined_at),
-    FOREIGN KEY (event_id) REFERENCES events(event_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Activities
-
-Logs user actions with updated schema.
-
-```sql
-CREATE TABLE activities (
-    activity_id INT NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    description VARCHAR(255) DEFAULT NULL,
-    activity_type ENUM('submission', 'validation', 'event', 'reward', 'feedback') NOT NULL,
-    event_title VARCHAR(255) DEFAULT NULL,
-    event_date DATE DEFAULT NULL,
-    event_location VARCHAR(255) DEFAULT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (activity_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_activity_type (activity_type),
-    INDEX idx_created_at (created_at),
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Rankings
-
-Tracks community rankings with indexing.
-
-```sql
-CREATE TABLE rankings (
-    ranking_id INT NOT NULL AUTO_INCREMENT,
-    barangay_id INT NOT NULL,
-    total_trees_planted INT DEFAULT 0,
-    rank_position INT DEFAULT NULL,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (ranking_id),
-    INDEX idx_barangay_id (barangay_id),
-    INDEX idx_total_trees_planted (total_trees_planted),
-    FOREIGN KEY (barangay_id) REFERENCES barangays(barangay_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Planting Locations
-
-Records planting site coordinates with indexing.
-
-```sql
-CREATE TABLE planting_sites (
-    planting_site_id INT NOT NULL AUTO_INCREMENT,
-    barangay_id INT NOT NULL,
-    latitude DECIMAL(10,8) NOT NULL,
-    longitude DECIMAL(11,8) NOT NULL,
-    updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
-    updated_by INT DEFAULT NULL,
-    PRIMARY KEY (planting_site_id),
-    INDEX idx_barangay_id (barangay_id),
-    FOREIGN KEY (barangay_id) REFERENCES barangays(barangay_id),
-    FOREIGN KEY (updated_by) REFERENCES users(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Feedback
-
-Stores user feedback with corrected schema.
-
-```sql
-CREATE TABLE feedback (
-    feedback_id INT NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    category ENUM('bug', 'feature', 'general') NOT NULL,
-    rating INT NOT NULL,
-    comments TEXT NOT NULL,
-    is_anonymous TINYINT(1) DEFAULT 0,
-    status ENUM('submitted', 'under_review', 'resolved') DEFAULT 'submitted',
-    submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    reviewed_by INT DEFAULT NULL,
-    reviewed_at TIMESTAMP DEFAULT NULL,
-    response TEXT DEFAULT NULL,
-    PRIMARY KEY (feedback_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_category (category),
-    INDEX idx_status (status),
-    INDEX idx_submitted_at (submitted_at),
-    FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (reviewed_by) REFERENCES users(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Vouchers
-
-Stores voucher details with corrected schema.
-
-```sql
-CREATE TABLE vouchers (
-    voucher_id INT NOT NULL AUTO_INCREMENT,
-    name VARCHAR(255) NOT NULL,
-    points_cost INT NOT NULL,
-    image LONGBLOB NOT NULL,
-    terms TEXT NOT NULL,
-    partner VARCHAR(255) NOT NULL,
-    partner_contact VARCHAR(255) NOT NULL,
-    partner_website VARCHAR(255) NOT NULL,
-    expiry_date DATE NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (voucher_id),
-    INDEX idx_points_cost (points_cost),
-    INDEX idx_expiry_date (expiry_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Voucher Claims
-
-Tracks redeemed vouchers with indexing.
-
-```sql
-CREATE TABLE voucher_claims (
-    claim_id INT NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    voucher_id INT NOT NULL,
-    code VARCHAR(50) NOT NULL,
-    qr_code TEXT NOT NULL,
-    redeemed_at DATETIME NOT NULL,
-    expiry_date DATE NOT NULL,
-    status ENUM('pending', 'redeemed', 'expired') DEFAULT 'pending',
-    PRIMARY KEY (claim_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_voucher_id (voucher_id),
-    INDEX idx_status (status),
-    INDEX idx_redeemed_at (redeemed_at),
-    FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (voucher_id) REFERENCES vouchers(voucher_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### Assets
-
-Stores binary assets like profile pictures, favicon, and logo.
-
-```sql
-CREATE TABLE assets (
-    asset_id INT NOT NULL AUTO_INCREMENT,
-    asset_type VARCHAR(50) NOT NULL,
-    asset_data LONGBLOB NOT NULL,
-    PRIMARY KEY (asset_id),
-    INDEX idx_asset_type (asset_type)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-### How It All Connects
-
-Tables are linked via foreign keys (e.g., `user_id` connects `users` to `submissions` and `activities`). Indexes are added to improve query performance on frequently accessed columns (e.g., `user_id`, `status`, `submitted_at`). To set up, create a database named `greenroots_db` in phpMyAdmin, then run the SQL code above to build the tables.
+The app uses a MySQL database to store data. Each table serves a specific purpose, and they link together for smooth operation. To set up the database, navigate to the `database` folder where the exported SQL files are located. Import these files into a database named `greenroots_db` using phpMyAdmin or a similar tool to create the necessary tables.
 
 ## Tools Used
 
@@ -502,6 +308,7 @@ Tables are linked via foreign keys (e.g., `user_id` connects `users` to `submiss
   - Chart.js (CDN: `https://cdn.jsdelivr.net/npm/chart.js`).
   - QRCode.js (CDN: `https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js`).
   - jsPDF (CDN: `https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.1/jspdf.umd.min.js` or `2.5.1` for events).
+  - Leaflet.js (CDN: `https://unpkg.com/leaflet@1.9.4/dist/leaflet.js` and `leaflet.css`).
 - **Utilities**: XAMPP, VS Code.
 
 ## How to Install
@@ -512,7 +319,7 @@ Tables are linked via foreign keys (e.g., `user_id` connects `users` to `submiss
    ```
    Or download and unzip from GitHub.
 2. **Set Up Server**: Install XAMPP, start Apache and MySQL.
-3. **Create Database**: In phpMyAdmin, create `greenroots_db` and run SQL from [Database Setup](#database-setup).
+3. **Create Database**: In phpMyAdmin, create `greenroots_db` and import the SQL files from the `database` folder.
 4. **Configure**: Edit `includes/config.php` with database credentials (default: username “root”, no password).
 5. **Access**: Open `http://localhost/green-roots/index.php`.
 
@@ -531,6 +338,8 @@ Tables are linked via foreign keys (e.g., `user_id` connects `users` to `submiss
 - **Change Password**: Update your password on “Password & Security.”
 - **Set Payment Methods**: Add/remove PayPal email on “Payment Methods” (prototype).
 - **Logout**: End session via the profile dropdown.
+- **Validator Actions**: Review submissions on the validator dashboard (use with caution due to potential bugs).
+- **Admin Actions**: Manage users, events, and rankings via the partial admin dashboard (limited functionality).
 
 ## How to Contribute
 
@@ -548,7 +357,9 @@ This represents an initial, simplified structure for prototyping purposes and is
 
 ## File Functionalities
 
-### index.php (Landing Page)
+### User Functionalities
+
+#### index.php (Landing Page)
 
 **Purpose**: Welcomes users to Green Roots.
 
@@ -560,7 +371,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN).
 - CSS (`assets/css/index.css`).
 
-### login.php (Login Page)
+#### login.php (Login Page)
 
 **Purpose**: Authenticates users securely.
 
@@ -573,7 +384,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN).
 - Inline CSS.
 
-### register.php (Registration Page)
+#### register.php (Registration Page)
 
 **Purpose**: Handles new user sign-ups.
 
@@ -586,7 +397,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN).
 - `services/get_locations.php`.
 
-### dashboard.php (Dashboard Page)
+#### dashboard.php (Dashboard Page)
 
 **Purpose**: Provides a personalized overview.
 
@@ -598,7 +409,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome, Chart.js (CDN).
 - CSS (`assets/css/dashboard.css`).
 
-### submit.php (Submit Tree Planting Page)
+#### submit.php (Submit Tree Planting Page)
 
 **Purpose**: Manages tree planting submissions.
 
@@ -611,7 +422,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN).
 - Inline CSS.
 
-### planting_site.php (Designated Planting Site Page)
+#### planting_site.php (Designated Planting Site Page)
 
 **Purpose**: Displays planting locations.
 
@@ -624,7 +435,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN).
 - Inline CSS.
 
-### leaderboard.php (Leaderboard Page)
+#### leaderboard.php (Leaderboard Page)
 
 **Purpose**: Displays user and community rankings.
 
@@ -638,7 +449,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN).
 - CSS (`assets/css/leaderboard.css`).
 
-### rewards.php (Rewards Page)
+#### rewards.php (Rewards Page)
 
 **Purpose**: Manages point redemption.
 
@@ -651,7 +462,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome, QRCode.js, jsPDF (CDN).
 - CSS (`assets/css/rewards.css`).
 
-### events.php (Events Page)
+#### events.php (Events Page)
 
 **Purpose**: Enables users to browse, filter, join, and manage community tree planting events with QR code tickets.
 
@@ -674,7 +485,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - CSS (`assets/css/events.css`).
 - JavaScript (`assets/js/jsPDF-3.0.1/dist/jspdf.umd.min.js` for PDF generation).
 
-### history.php (History Page)
+#### history.php (History Page)
 
 **Purpose**: Displays a log of user activities (planting, events, rewards, feedback) with filtering and pagination.
 
@@ -696,7 +507,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
 - CSS (`assets/css/history.css`).
 
-### feedback.php (Feedback Page)
+#### feedback.php (Feedback Page)
 
 **Purpose**: Enables users to submit feedback and view their feedback history with admin responses.
 
@@ -715,7 +526,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
 - CSS (inline in `feedback.php`).
 
-### account_settings.php (Account Settings Page)
+#### account_settings.php (Account Settings Page)
 
 **Purpose**: Allows users to update personal account details securely.
 
@@ -732,7 +543,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
 - CSS (inline in `account_settings.php`).
 
-### profile.php (Profile Page)
+#### profile.php (Profile Page)
 
 **Purpose**: Enables users to manage their profile picture.
 
@@ -750,7 +561,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
 - CSS (inline in `profile.php`).
 
-### password_security.php (Password & Security Page)
+#### password_security.php (Password & Security Page)
 
 **Purpose**: Enables users to change their password securely.
 
@@ -768,7 +579,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
 - CSS (inline in `password_security.php`).
 
-### payment_methods.php (Payment Methods Page, Prototype)
+#### payment_methods.php (Payment Methods Page, Prototype)
 
 **Purpose**: Manages PayPal email for reward withdrawals (prototype).
 
@@ -787,7 +598,7 @@ This represents an initial, simplified structure for prototyping purposes and is
 - Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
 - CSS (inline in `payment_methods.php`).
 
-### logout.php (Logout Page)
+#### logout.php (Logout Page)
 
 **Purpose**: Terminates the user’s session and redirects to the landing page.
 
@@ -799,6 +610,179 @@ This represents an initial, simplified structure for prototyping purposes and is
 
 **External Dependencies**:
 - None (pure PHP).
+
+### Validator Functionalities
+
+#### validator_dashboard.php (Validator Dashboard Page)
+
+**Purpose**: Provides an overview for validators, showing their assigned barangay, user stats, submission statuses, and recent submissions.
+
+**Functionalities**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role (e.g., user or admin).
+- **Data Fetching**: Retrieves validator details (username, email, profile picture, barangay) from the `users` and `barangays` tables, and stats (user count, pending/approved/flagged submissions) for the assigned barangay.
+- **Profile Picture Handling**: Displays the validator’s profile picture, either from the `profile_picture` blob in the `users` table, a default asset from the `assets` table, or a static fallback (`default_profile.jpg`).
+- **Statistics Display**: Shows the number of users in the barangay, pending submissions (status: "pending"), approved submissions (status: "approved"), and flagged submissions (flagged: 1).
+- **Recent Submission**: Displays the most recent submission in the barangay, including submission ID, user’s first name, trees planted, photo (if available), latitude/longitude, submission date, and status.
+- **Navigation**: Provides sidebar links to the dashboard (`validator_dashboard.php`), pending reviews (`pending_reviews.php`), reviewed submissions (`reviewed_submissions.php`), and barangay planting site (`barangay_designated_site.php`).
+- **Search Functionality**: Allows searching for pages (e.g., Dashboard, Pending Reviews) via a search bar with autocomplete suggestions, redirecting to the selected page.
+- **UI Elements**: Features a responsive layout with a sidebar, header (with search bar and profile dropdown), stat boxes for submissions, and a table for the recent submission. Includes hover effects, tooltips, and mobile responsiveness.
+- **Error Handling**: Displays database errors in a styled error message box if queries fail.
+
+**External Dependencies**:
+- Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
+- Chart.js (CDN: `https://cdn.jsdelivr.net/npm/chart.js`).
+- Inline CSS.
+
+#### pending_reviews.php (Pending Reviews Page)
+
+**Purpose**: Allows validators to review and manage pending tree planting submissions.
+
+**Functionalities**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role.
+- **Data Fetching**: Retrieves pending submissions (`status='pending'`) for the validator’s barangay from the `submissions` table, joined with `users` for submitter details (username, email). Supports pagination (11 items per page) and ordering by submission date (newest first).
+- **Search Functionality**: Enables searching submissions by username or email, persisting the query across pages using session storage (`$_SESSION['validator_search']`) and URL parameters. Uses the PRG pattern for form submissions.
+- **Eco Points Calculation**: Calculates eco points per submission: 50 points per tree, with a 20% fairness buffer (1.2 multiplier) and a 10% reward multiplier (1.1), rounded to the nearest integer.
+- **Submission Review**:
+  - Displays submissions in a table with columns: Submission ID, Submitter (username), Submitted At (formatted date), Location (latitude/longitude with OpenStreetMap link), Photo (clickable to enlarge), Trees Planted, Eco Points, Notes, Status, Flag (icon if flagged), and Actions.
+  - Validators can approve or reject submissions via an "Actions" button:
+    - **Approve**: Updates the submission status to "approved" in the `submissions` table, adds eco points and trees planted to the user’s record in the `users` table, and disables further actions on the submission in the UI.
+    - **Reject**: Requires a rejection reason via a modal, then updates the submission status to "rejected" with the reason in the `submissions` table.
+    - Both actions record the validator’s ID (`validated_by`) and timestamp (`validated_at`) in the `submissions` table.
+  - Uses the `update_submission.php` service to handle updates via a fetch API call, ensuring transactional integrity.
+- **UI Elements**: Features a responsive table with hover effects, pagination, and modals for actions (approve/reject) and image enlargement. Includes a sidebar (Dashboard, Pending Reviews, Reviewed Submissions, Barangay Map), a header search bar (for page navigation), and a profile dropdown (Account, Logout).
+- **Error Handling**: Catches PDO and general exceptions, displaying errors in a styled box. Shows “No pending submissions available” if no results are found. Handles fetch API errors with modal feedback.
+- **Accessibility**: Includes focus states for buttons, inputs, and links to improve accessibility.
+
+**External Dependencies**:
+- Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
+- Inline CSS and JavaScript.
+
+#### reviewed_submissions.php (Reviewed Submissions Page)
+
+**Purpose**: Displays a history of reviewed tree planting submissions for the validator’s barangay.
+
+**Functionalities**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role.
+- **Data Fetching**: Retrieves approved (`status='approved'`) and rejected (`status='rejected'`) submissions for the validator’s barangay from the `submissions` table, joined with `users` for submitter details (username, email). Supports pagination (10 items per page) and ordering by submission date (newest first).
+- **Search and Filter Functionality**:
+  - Enables searching submissions by username or email, persisting the query across pages using session storage (`$_SESSION['search_query_reviewed']`) and URL parameters. Uses the PRG pattern for form submissions.
+  - Provides a status filter (`all`, `approved`, `rejected`) via a dropdown, updating the page URL with the selected value.
+- **Eco Points Calculation**: Calculates eco points per submission: 50 points per tree, with a 20% fairness buffer (1.2 multiplier) and a 10% reward multiplier (1.1), rounded to the nearest integer.
+- **Real-Time Updates**: Uses AJAX polling every 2 seconds to fetch updated submission data from the `fetch_reviewed.php` service, refreshing the table dynamically without page reloads.
+- **Display**:
+  - Shows submissions in a table with columns: Submission ID, Submitter (username), Submitted At (formatted date), Location (latitude/longitude with OpenStreetMap link), Photo (clickable to enlarge), Trees Planted, Eco Points, Notes, Status, Rejection Reason (if applicable), and Flag (icon if flagged).
+  - Photos are displayed as thumbnails, clickable to enlarge in a modal. Missing photos show "No Photo".
+  - Location links open in OpenStreetMap in a new tab.
+- **Pagination**: Supports navigation through multiple pages with "Previous" and "Next" links, dynamically adjusting based on total items and current page.
+- **UI Elements**: Features a responsive table with hover effects, a custom search bar and status filter, a sidebar (Dashboard, Pending Reviews, Reviewed Submissions, Barangay Map), a header search bar (for page navigation), and a profile dropdown (Account, Logout). Includes an image modal for photo enlargement, accessibility focus states, and mobile responsiveness.
+- **Error Handling**: Catches PDO and general exceptions, displaying errors in a styled box. Shows “No reviewed submissions available” if no results are found.
+- **Dependencies**: Relies on the `fetch_reviewed.php` service for real-time data updates.
+
+**External Dependencies**:
+- Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
+- Inline CSS and JavaScript.
+
+#### barangay_designated_site.php (Barangay Designated Site Page)
+
+**Purpose**: Displays the designated planting site for the validator’s barangay.
+
+**Functionalities**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role. Includes an additional check to redirect non-validator users to their respective dashboards (e.g., `dashboard.php` for users, `admin_dashboard.php` for admins).
+- **Data Fetching**: Retrieves the validator’s barangay ID and details from the `users` and `barangays` tables. Fetches the latest planting site coordinates (latitude, longitude) and update timestamp from the `planting_sites` table, joined with `barangays` for the barangay name, using a function (`getPlantingSite`) that orders by `updated_at` DESC and limits to 1 record.
+- **Profile Picture Handling**: Displays the validator’s profile picture, either from the `profile_picture` blob in the `users` table, a default asset from the `assets` table (with MIME type detection for PNG or JPEG), or a static fallback (`default_profile.jpg`).
+- **Asset Fetching**: Loads favicon and logo data from the `assets` table (type `favicon` and `logo`) as base64-encoded images, with fallbacks to static files (`favicon.png` and `logo.png`) if no data is found.
+- **Display**:
+  - Shows a card with details: barangay name, latitude, longitude, and last updated timestamp. If no planting site exists, displays an error message prompting the validator to contact an admin.
+  - Includes a link to view the site on OpenStreetMap in a new tab.
+  - Embeds an interactive Leaflet map with a custom marker (icon from a CDN) at the planting site coordinates, with a popup displaying the barangay name.
+- **Real-Time Updates**: Uses AJAX polling every 5 seconds to fetch updated planting site data from the `fetch_designated_site.php` service, refreshing the card details and map view dynamically. Updates the map marker and view center based on new coordinates.
+- **UI Elements**: Features a responsive layout with a sidebar (links to Dashboard, Pending Reviews, Reviewed Submissions, Barangay Map), a header with a search bar (for page navigation) and profile dropdown (Account, Logout), a styled planting site card with animations, and a map container. Includes hover effects, accessibility focus states, and mobile responsiveness (e.g., sidebar moves to bottom, map height adjusts).
+- **Error Handling**: Catches PDO exceptions, logging them to the error log and displaying a styled error message. Handles cases where no planting site data is available with a user-friendly message.
+- **Dependencies**: Relies on the `fetch_designated_site.php` service for real-time data and uses Leaflet.js for mapping, with a custom icon from a CDN.
+
+**External Dependencies**:
+- Font Awesome (CDN: `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`).
+- Leaflet.js (CDN: `https://unpkg.com/leaflet@1.9.4/dist/leaflet.js` and `leaflet.css`).
+- Custom marker icon (CDN: `https://cdn-icons-png.flaticon.com/512/684/684908.png`).
+- Inline CSS and JavaScript.
+
+#### services/fetch_designated_site.php (Fetch Designated Site Service)
+
+**Purpose**: Provides real-time planting site data for the `barangay_designated_site.php` page via AJAX requests.
+
+**Functionalities**:
+- **Authentication and Authorization**: Checks for a valid session with a `user_id`, returning a 403 Forbidden response with a JSON error if unauthorized.
+- **Input Handling**: Accepts a `barangay_id` GET parameter; returns a JSON error if missing.
+- **Data Fetching**: Queries the `planting_sites` table, joined with `barangays`, to retrieve the latest planting site data (latitude, longitude, updated_at, barangay name) for the specified barangay, ordered by `updated_at` DESC and limited to 1 record.
+- **Response**: Returns a JSON object with the planting site data or an error message if no data is found or the query fails.
+- **Error Handling**: Catches PDO and general exceptions, returning a 500 Internal Server Error status with a JSON error message including the exception details.
+- **Security**: Ensures session validation to prevent unauthorized access to site data.
+
+**External Dependencies**:
+- None (pure PHP with PDO).
+
+#### services/update_submission.php (Update Submission Service)
+
+**Purpose**: Handles updates to submission statuses and user data for validator actions.
+
+**Functionalities**:
+- **Input Handling**: Accepts JSON input via POST, expecting `submission_id`, `status` ("approved" or "rejected"), `validated_by`, `validated_at`, and optional fields (`user_id`, `eco_points`, `trees_planted`, `rejection_reason`).
+- **Validation**: Ensures valid input and status values, returning an error if invalid.
+- **Database Updates**:
+  - Updates the `submissions` table with the new status, validator ID, validation timestamp, and rejection reason (if applicable).
+  - For approved submissions, updates the `users` table by adding `eco_points` and `trees_planted` to the user’s record.
+- **Transaction Management**: Uses PDO transactions to ensure data consistency, rolling back on failure.
+- **Response**: Returns a JSON response indicating success or failure with an error message.
+- **Error Handling**: Catches PDO and general exceptions, returning error details in the response.
+
+**External Dependencies**:
+- None (pure PHP with PDO).
+
+#### services/fetch_reviewed.php (Fetch Reviewed Submissions Service)
+
+**Purpose**: Provides real-time data for reviewed submissions to support AJAX updates in `reviewed_submissions.php`.
+
+**Functionalities**:
+- **Authentication and Authorization**: Restricts access to users with the `eco_validator` role, redirecting unauthorized users to `login.php` or `access_denied.php` if they have a different role.
+- **Input Handling**: Accepts GET parameters for `barangay_id`, `status` ("all", "approved", "rejected"), and `search` (username or email).
+- **Data Fetching**: Retrieves approved and rejected submissions for the specified barangay from the `submissions` table, joined with `users` for submitter details. Filters by status and search query if provided, ordering by submission date (newest first).
+- **Eco Points Calculation**: Calculates eco points for each submission: 50 points per tree, with a 20% fairness buffer (1.2 multiplier) and a 10% reward multiplier (1.1), rounded to the nearest integer.
+- **Data Formatting**: Encodes photo data as base64 for transmission if present.
+- **Response**: Returns a JSON response with the submission data or an error message if the query fails.
+- **Error Handling**: Catches PDO and general exceptions, returning a 500 status code with error details in the response.
+
+**External Dependencies**:
+- None (pure PHP with PDO).
+
+### Admin Functionalities
+
+#### admin_dashboard.php (Admin Dashboard Page)
+
+**Purpose**: Intended to provide admins with full access to manage the system.
+
+**Functionalities**:
+- **Note**: Admin functionalities are not fully implemented. Currently, only partial features exist for user and event management. Full implementation is pending due to time constraints.
+
+#### manage_planting_sites.php (Manage Planting Sites Page)
+
+**Purpose**: Intended to allow admins to manage designated planting sites.
+
+**Functionalities**:
+- **Note**: Admin functionalities are not fully implemented. This feature is pending completion.
+
+#### manage_validators.php (Manage Validators Page)
+
+**Purpose**: Intended to allow admins to manage validator roles and assignments.
+
+**Functionalities**:
+- **Note**: Admin functionalities are not fully implemented. This feature is pending completion.
+
+#### upload_assets.php (Upload Assets Page)
+
+**Purpose**: Intended to allow admins to upload assets like logos and icons.
+
+**Functionalities**:
+- **Note**: Admin functionalities are not fully implemented. This feature is pending completion.
 
 ## Security Features
 

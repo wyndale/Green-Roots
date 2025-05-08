@@ -325,6 +325,26 @@ body {
   outline: none;
 }
 
+/* Clear Filters Button Styles */
+#clearFiltersBtn {
+  padding: 8px 16px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  transition: background-color 0.3s, transform 0.1s;
+  min-width: 120px;
+  margin-left: 10px;
+}
+
+#clearFiltersBtn:hover {
+  background-color: #388e3c;
+  transform: scale(1.02);
+}
+
 .events-list {
   flex: 1;
   overflow-y: auto;
@@ -594,11 +614,11 @@ body {
 }
 
 .modal-content .qr-code {
-    margin: 15px auto;
-    text-align: center;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+  margin: 15px auto;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .modal-content .download-btn {
@@ -806,6 +826,13 @@ body {
     max-width: none;
     padding: 6px;
     font-size: 14px;
+  }
+
+  /* Adjust Clear Filters Button for Mobile */
+  #clearFiltersBtn {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 5px;
   }
 
   .events-list {
